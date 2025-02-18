@@ -1,0 +1,18 @@
+# Default ignored files
+/shelf/
+/workspace.xml
+idea/
+#/misc.xml
+#/inspectionProfiles/profiles_settings.xml
+#/inspectionProfiles/Project_Default.xml
+#/vcs.xml
+#/modules.xml
+#/blender-batch-cleanup.iml
+#/BlendCharmSettings.xml
+/misc.xml
+/modules.xml
+/inspectionProfiles/profiles_settings.xml
+/inspectionProfiles/Project_Default.xml
+/vcs.xml
+/BlendCharmSettings.xml
+/blender-batch-cleanup.iml
