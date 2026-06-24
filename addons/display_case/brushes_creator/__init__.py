@@ -192,48 +192,40 @@ class BRUSHES_OT_import_from_folders(bpy.types.Operator):
 
 
 # ==========================================================
-# Panel
+# Panel draw (called by the main addon panel, not registered directly)
 # ==========================================================
 
-class BRUSHES_PT_creator_panel(bpy.types.Panel):
-    bl_label = "Brush Creator"
-    bl_idname = "BRUSHES_PT_creator_panel"
-    bl_space_type = 'VIEW_3D'
-    bl_region_type = 'UI'
-    bl_category = 'AssetOps'
+def draw_panel(layout, context):
+    props = context.scene.brush_creator_props
 
-    def draw(self, context):
-        layout = self.layout
-        props = context.scene.brush_creator_props
+    box = layout.box()
+    box.label(text="Folders", icon='FILE_FOLDER')
+    box.prop(props, "textures_dir", text="Images")
+    box.prop(props, "thumbs_dir", text="Thumbnails")
 
-        box = layout.box()
-        box.label(text="Folders", icon='FILE_FOLDER')
-        box.prop(props, "textures_dir", text="Images")
-        box.prop(props, "thumbs_dir", text="Thumbnails")
+    box = layout.box()
+    box.label(text="Brush Settings", icon='BRUSH_DATA')
+    box.prop(props, "brush_type", expand=True)
+    box.separator()
+    box.prop(props, "stroke_type", expand=True)
+    box.separator()
+    bt = props.brush_type
+    if bt in {'TEXTURE_PAINT', 'BOTH'}:
+        box.prop(props, "tp_strength")
+    if bt in {'SCULPT', 'BOTH'}:
+        box.prop(props, "sculpt_strength")
+    box.separator()
+    box.prop(props, "texture_map_mode")
 
-        box = layout.box()
-        box.label(text="Brush Settings", icon='BRUSH_DATA')
-        box.prop(props, "brush_type", expand=True)
-        box.separator()
-        box.prop(props, "stroke_type", expand=True)
-        box.separator()
-        bt = props.brush_type
-        if bt in {'TEXTURE_PAINT', 'BOTH'}:
-            box.prop(props, "tp_strength")
-        if bt in {'SCULPT', 'BOTH'}:
-            box.prop(props, "sculpt_strength")
-        box.separator()
-        box.prop(props, "texture_map_mode")
+    box = layout.box()
+    box.label(text="Naming", icon='SORTALPHA')
+    box.prop(props, "use_name_prepost")
+    if props.use_name_prepost:
+        row = box.row()
+        row.prop(props, "name_pre")
+        row.prop(props, "name_post")
 
-        box = layout.box()
-        box.label(text="Naming", icon='SORTALPHA')
-        box.prop(props, "use_name_prepost")
-        if props.use_name_prepost:
-            row = box.row()
-            row.prop(props, "name_pre")
-            row.prop(props, "name_post")
-
-        layout.operator("brushes.import_from_folders", icon='BRUSHES_ALL')
+    layout.operator("brushes.import_from_folders", icon='BRUSHES_ALL')
 
 
 # ==========================================================
@@ -243,7 +235,6 @@ class BRUSHES_PT_creator_panel(bpy.types.Panel):
 classes = (
     BrushCreatorProperties,
     BRUSHES_OT_import_from_folders,
-    BRUSHES_PT_creator_panel,
 )
 
 

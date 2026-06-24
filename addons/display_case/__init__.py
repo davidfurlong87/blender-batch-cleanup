@@ -57,122 +57,87 @@ class RegexCommandProperty(bpy.types.PropertyGroup):
 #     default="128",
 # )
 
-class OBJECT_PT_OrientMeshesPanel(bpy.types.Panel):
-    bl_label = "Orient Meshes"
-    bl_idname = "OBJECT_PT_orient_meshes"
+class ASSETOPS_PT_main_panel(bpy.types.Panel):
+    bl_label = "Asset Ops"
+    bl_idname = "ASSETOPS_PT_main_panel"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = bl_category_name
 
     def draw(self, context):
         layout = self.layout
-        # Setting origin
-        layout.label(text="Set Origin:")
-        layout.prop(context.scene, "delete_empties")
-
-        layout.operator("object.set_origin_parent", text="Set to Parent Origin")
-        layout.operator("object.set_origin_bottom", text="Set to Bottom")
-
-        layout.label(text="Display Collection:")
-        layout.prop(context.scene, "use_current_collection")
-        layout.label(text="New Collection Name")
-        layout.prop(context.scene, "new_collection_name")
-        layout.label(text="Text Object Suffix")
-        layout.prop(context.scene, "text_object_suffix")
-        layout.operator("object.build_display_collection", text="Build Collection")
-
-        layout.label(text="Arrange Ops:")
-        layout.label(text="Custom Arrange Separator:")
-        layout.prop(context.scene, "arrange_meshes_separator")
         row = layout.row()
+        row.prop(context.window_manager, "asset_ops_tab", expand=True)
 
-        layout.operator("object.arrange_meshes", text="Arrange meshes")
-        layout.operator("object.update_text_objects", text="Update Text")
-        row = layout.row()
+        tab = context.window_manager.asset_ops_tab
+        if tab == 'DISPLAY':
+            self._draw_display(layout, context)
+        elif tab == 'CLEANUP':
+            self._draw_cleanup(layout, context)
+        elif tab == 'ASSETS':
+            self._draw_assets(layout, context)
+        elif tab == 'BRUSHES':
+            brushes_creator.draw_panel(layout, context)
 
-        layout.prop(context.scene.default_text_parameters, "text_size")
-
-
-class OBJECT_PT_CleanupPanel(bpy.types.Panel):
-    bl_label = "Batch Cleanup"
-    bl_idname = "OBJECT_PT_batch_cleanup"
-    bl_space_type = 'VIEW_3D'
-    bl_region_type = 'UI'
-    bl_category = bl_category_name
-
-    def draw(self, context):
-        layout = self.layout
-        layout.prop(context.scene, "reload_file")
-
-        row = layout.row()
-        layout.operator("object.remove_duplicate_mats", text="Remove Duplicate Mats")
-        layout.operator("object.delete_empties", text="Delete Empties")
-
-
-class OBJECT_PT_AssetMakerPanel(bpy.types.Panel):
-    bl_label = "Asset Maker"
-    bl_idname = "OBJECT_PT_asset_maker_panel"
-    bl_space_type = 'VIEW_3D'
-    bl_region_type = 'UI'
-    bl_category = bl_category_name
-
-    def draw(self, context):
-        layout = self.layout
-        scene = context.scene
-
-        # layout.prop(context.scene, "rename_regex")
+    def _draw_display(self, layout, context):
         box = layout.box()
-        box.label(text="Select the location of asset images preview image", icon='INFO')
+        box.label(text="Set Origin", icon='OBJECT_ORIGIN')
+        box.prop(context.scene, "delete_empties")
         row = box.row(align=True)
-        row.prop(bpy.context.scene, "asset_preview_path", text="")
-        row.operator("object.browse_folder", text="Select Folder", icon='FILE_FOLDER')
-        
+        row.operator("object.set_origin_parent", text="To Parent")
+        row.operator("object.set_origin_bottom", text="To Bottom")
+
+        box = layout.box()
+        box.label(text="Display Collection", icon='OUTLINER_COLLECTION')
+        box.prop(context.scene, "use_current_collection")
+        box.prop(context.scene, "new_collection_name", text="Name")
+        box.prop(context.scene, "text_object_suffix", text="Text Suffix")
+        box.operator("object.build_display_collection", text="Build Collection")
+
+        box = layout.box()
+        box.label(text="Arrange", icon='SORTBYEXT')
+        box.prop(context.scene, "arrange_meshes_separator")
+        row = box.row(align=True)
+        row.operator("object.arrange_meshes", text="Arrange Meshes")
+        row.operator("object.update_text_objects", text="Update Text")
+        box.prop(context.scene.default_text_parameters, "text_size")
+
+    def _draw_cleanup(self, layout, context):
+        box = layout.box()
+        box.label(text="Scene", icon='SCENE_DATA')
+        box.prop(context.scene, "reload_file")
+        box.operator("object.remove_duplicate_mats", text="Remove Duplicate Mats")
+        box.operator("object.delete_empties", text="Delete Empties")
+
+        box = layout.box()
+        box.label(text="Rename Meshes", icon='SORTALPHA')
+        box.prop(context.scene, "rename_regex")
+        box.prop(context.scene, "numbers_to_add", text="Add Number")
+        row = box.row(align=True)
+        row.operator("object.rename_meshes", text="Rename")
+        row.operator("object.clear_regex", text="Clear")
+
+        box = layout.box()
+        box.label(text="Vertex Groups", icon='GROUP_VERTEX')
+        box.prop(context.scene, "vertex_group_name")
+        box.operator("object.create_full_vertex_group")
+        box.operator("object.assign_vertex_group_by_name")
+
+    def _draw_assets(self, layout, context):
+        box = layout.box()
+        box.label(text="Asset Preview Images", icon='INFO')
+        row = box.row(align=True)
+        row.prop(context.scene, "asset_preview_path", text="")
+        row.operator("object.browse_folder", text="", icon='FILE_FOLDER')
+
         box = layout.box()
         row = box.row()
-        row.label(text="Image Prefix:")
+        row.label(text="Prefix:")
         row.prop(context.scene, "asset_images_prefix", text="")
         row = box.row()
-        row.label(text="Image Suffix:")
+        row.label(text="Suffix:")
         row.prop(context.scene, "asset_images_suffix", text="")
-        row = box.row()
-        # row.label(text="Build Assets With Images:")
-        row.operator("object.add_asset_images", text="Build Assets With Images", icon='ASSET_MANAGER')
-
-
-class OBJECT_PT_RenameMeshesPanel(bpy.types.Panel):
-    bl_label = "Rename Meshes"
-    bl_idname = "OBJECT_PT_rename_meshes"
-    bl_space_type = 'VIEW_3D'
-    bl_region_type = 'UI'
-    bl_category = bl_category_name
-
-    def draw(self, context):
-        layout = self.layout
-        layout.label(text="RenameMeshes:")
-        layout.prop(context.scene, "rename_regex")
-        
-        row = layout.row()
-        row.prop(context.scene, "numbers_to_add", text="Add Number")
-        # TODO: reimplement below
-        # row.operator("object.execute_command", text="Add Numbers").command = "add_numbers"
-        
-        row = layout.row()
-        layout.operator("object.rename_meshes")
-        layout.operator("object.clear_regex")
-
-class VIEW3D_PT_vertex_group_creator(bpy.types.Panel):
-    """Panel for creating a full vertex group"""
-    bl_label = "Vertex Group Creator"
-    bl_idname = "VIEW3D_PT_vertex_group_creator"
-    bl_space_type = 'VIEW_3D'
-    bl_region_type = 'UI'
-    bl_category = bl_category_name
-
-    def draw(self, context):
-        layout = self.layout
-        layout.prop(context.scene, "vertex_group_name")
-        layout.operator("object.create_full_vertex_group")
-        layout.operator("object.assign_vertex_group_by_name")
+        box.operator("object.add_asset_images", text="Build Assets With Images", icon='ASSET_MANAGER')
 
 class OBJECT_OT_create_full_vertex_group(bpy.types.Operator):
     """Create a vertex group and assign all vertices to it"""
@@ -604,11 +569,7 @@ class TextObjectParameters(bpy.types.PropertyGroup):
 
 
 PANELS = [
-    OBJECT_PT_OrientMeshesPanel,
-    OBJECT_PT_CleanupPanel,
-    OBJECT_PT_AssetMakerPanel,
-    OBJECT_PT_RenameMeshesPanel,
-    VIEW3D_PT_vertex_group_creator
+    ASSETOPS_PT_main_panel,
 ]
 
 ARRANGE_OPERATORS = [
@@ -731,12 +692,24 @@ def register():
         default="suffix_placeholder"
     )
 
-    brushes_creator.register()
+    bpy.types.WindowManager.asset_ops_tab = EnumProperty(
+        name="Tab",
+        items=[
+            ('DISPLAY', "Display", "Display case and arrangement tools"),
+            ('CLEANUP', "Cleanup", "Batch cleanup, rename, and vertex group tools"),
+            ('ASSETS', "Assets", "Asset preview image tools"),
+            ('BRUSHES', "Brushes", "Brush creation tools"),
+        ],
+        default='DISPLAY'
+    )
 
+    brushes_creator.register()
 
 
 def unregister():
     brushes_creator.unregister()
+
+    del bpy.types.WindowManager.asset_ops_tab
 
     bpy.utils.unregister_class(RegexCommandProperty)
 
