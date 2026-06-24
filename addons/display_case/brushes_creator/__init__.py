@@ -47,6 +47,19 @@ class BrushCreatorProperties(bpy.types.PropertyGroup):
     )
     tp_strength: FloatProperty(name="Paint Strength", default=1.0, min=0.0, max=2.0)
     sculpt_strength: FloatProperty(name="Sculpt Strength", default=0.5, min=0.0, max=2.0)
+    texture_map_mode: EnumProperty(
+        name="Texture Mapping",
+        description="How the texture is mapped onto the brush stroke",
+        items=[
+            ('VIEW_PLANE', "View Plane", "Project texture onto the view plane"),
+            ('AREA_PLANE', "Area Plane", "Project texture onto the area plane (sculpt only)"),
+            ('TILED', "Tiled", "Tile the texture across the surface"),
+            ('RANDOM', "Random", "Randomize texture position per dab"),
+            ('STENCIL', "Stencil", "Use the texture as a stencil (texture paint only)"),
+            ('3D', "3D", "Use 3D texture coordinates (sculpt only)"),
+        ],
+        default='RANDOM'
+    )
     # Internal texture settings (not exposed in panel)
     img_use_existing: BoolProperty(default=True)
     texture_calculate_alpha: BoolProperty(default=True)
@@ -128,12 +141,14 @@ class BRUSHES_OT_import_from_folders(bpy.types.Operator):
         except Exception as e:
             print(f"Preview warning for {brush.name}: {e}")
 
-    def _new_brush(self, name, mode, texture, strength, stroke, thumb_path):
+    def _new_brush(self, name, mode, texture, strength, stroke, thumb_path, map_mode='RANDOM'):
         brush = bpy.data.brushes.new(name=self._unique_brush_name(name), mode=mode)
         brush.texture = texture
         brush.strength = strength
         if stroke and hasattr(brush, 'stroke_method'):
             brush.stroke_method = stroke
+        if brush.texture_slot:
+            brush.texture_slot.map_mode = map_mode
         self._apply_preview(brush, thumb_path)
         return brush
 
@@ -163,11 +178,11 @@ class BRUSHES_OT_import_from_folders(bpy.types.Operator):
 
             if props.brush_type in {'TEXTURE_PAINT', 'BOTH'}:
                 for stroke, suffix in strokes:
-                    self._new_brush(base_name + suffix, 'TEXTURE_PAINT', texture, props.tp_strength, stroke, thumb)
+                    self._new_brush(base_name + suffix, 'TEXTURE_PAINT', texture, props.tp_strength, stroke, thumb, props.texture_map_mode)
 
             if props.brush_type in {'SCULPT', 'BOTH'}:
                 for stroke, suffix in strokes:
-                    self._new_brush(base_name + suffix, 'SCULPT', texture, props.sculpt_strength, stroke, thumb)
+                    self._new_brush(base_name + suffix, 'SCULPT', texture, props.sculpt_strength, stroke, thumb, props.texture_map_mode)
 
             return True
 
@@ -207,6 +222,8 @@ class BRUSHES_PT_creator_panel(bpy.types.Panel):
             box.prop(props, "tp_strength")
         if bt in {'SCULPT', 'BOTH'}:
             box.prop(props, "sculpt_strength")
+        box.separator()
+        box.prop(props, "texture_map_mode")
 
         box = layout.box()
         box.label(text="Naming", icon='SORTALPHA')
