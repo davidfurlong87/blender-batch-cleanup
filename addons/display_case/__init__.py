@@ -2,6 +2,7 @@ import bpy
 import os
 from .display_case import *
 from bpy.props import BoolProperty, EnumProperty, StringProperty, FloatProperty
+from . import brushes_creator
 
 bl_info = {
     "name": "display_case",
@@ -89,7 +90,7 @@ class OBJECT_PT_OrientMeshesPanel(bpy.types.Panel):
         layout.operator("object.update_text_objects", text="Update Text")
         row = layout.row()
 
-        layout.prop(context.scene, "default_text_parameters")
+        layout.prop(context.scene.default_text_parameters, "text_size")
 
 
 class OBJECT_PT_CleanupPanel(bpy.types.Panel):
@@ -690,7 +691,7 @@ def register():
         description="Close and reopen the file to clear data",
         default=False
     )
-    bpy.types.Object.default_text_parameters = bpy.props.PointerProperty(
+    bpy.types.Scene.default_text_parameters = bpy.props.PointerProperty(
         type=TextObjectParameters
     )
     bpy.types.Scene.vertex_group_name = bpy.props.StringProperty(
@@ -730,13 +731,15 @@ def register():
         default="suffix_placeholder"
     )
 
+    brushes_creator.register()
 
 
 
 def unregister():
+    brushes_creator.unregister()
+
     bpy.utils.unregister_class(RegexCommandProperty)
 
-    del bpy.types.Object.my_prop_grp
     for r_class in REGISTER_CLASSES:
         bpy.utils.unregister_class(r_class)
 
@@ -747,7 +750,6 @@ def unregister():
     del bpy.types.Scene.text_object_suffix
     del bpy.types.Scene.delete_empties
     del bpy.types.Scene.default_text_parameters
-    del bpy.types.Scene.custom_text_parameters
 
     # Delete Cleanup Properties
     del bpy.types.Scene.reload_file

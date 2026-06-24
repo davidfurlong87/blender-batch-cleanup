@@ -55,17 +55,16 @@ def unlink_from_other_collections(obj, collection_to_keep):
             collection.objects.unlink(obj)
 
 
-def move_selected_objects_to_collection(collection):
+def link_selected_objects_to_collection(collection):
     for obj in get_selected_objects_of_type():
         if obj.name not in collection.objects:
             link_object_to_single_collection(obj, collection)
 
 
 def clear_collection(collection):
-    objs = [obj for obj in collection.objects]
-    for obj in objs:
-        bpy.data.objects.remove(obj, do_unlink=True)
-
+    if collection:
+        for obj in collection.objects:
+            bpy.data.objects.remove(obj, do_unlink=True)
 
 def clear_collection_of_type(collection, *mesh_types):
     for obj in [obj for obj in collection.objects if obj.type in mesh_types]:
@@ -113,6 +112,25 @@ def move_objects_to_new_collection(collection_name):
 
 def delete_object_by_name(obj_name):
     bpy.data.objects.remove(bpy.data.objects[obj_name])
+
+def delete_objects_and_meshes(objs_to_delete):
+    # Deselect all first
+    bpy.ops.object.select_all(action='DESELECT')
+
+    for obj in objs_to_delete:
+        # Deselect all others and select the target object
+        obj.select_set(True)
+
+        # Store mesh data before deleting the object
+        mesh_data = obj.data
+        obj_name = obj.name
+
+        # Delete the object
+        bpy.ops.object.delete()
+
+        # if mesh_data.users == 0:
+        bpy.data.meshes.remove(mesh_data)
+
 
 
 # -------------------------------------------
