@@ -115,6 +115,23 @@ class ASSETOPS_PT_main_panel(bpy.types.Panel):
 
         box = layout.box()
         box.label(text="Rename Meshes", icon='SORTALPHA')
+        # box.prop(context.scene, "rename_regex")
+        row = box.row(align=True)
+        row.prop(context.scene, "obj_name", text="Name", icon="SYNTAX_OFF")
+        row = box.row(align=True)
+
+        row.prop(context.scene, "start_number", text="Start Number:")
+        row.prop(context.scene.number_type_properties, "number_type", text="Type:", icon="PRESET")
+
+        row = box.row(align=True)
+        # set button size
+        scale = 1.2
+        layout.scale_x = scale
+        layout.scale_y = scale
+        row.operator("object.rename_object", text="Rename")
+
+        box.label(text="REGEX Rename", icon='SORTALPHA')
+
         box.prop(context.scene, "rename_regex")
         box.prop(context.scene, "numbers_to_add", text="Add Number")
         row = box.row(align=True)
@@ -568,8 +585,43 @@ class OBJECT_OT_Add_Asset_Images(bpy.types.Operator):
     #     return {'RUNNING_MODAL'}
 
 
+class NumberTypePropertyGroup(bpy.types.PropertyGroup):
+    number_type: bpy.props.EnumProperty(
+        name="Number Type",
+        items=[
+            ("1,2...", "1,2,3...", ""),
+            ("01,02...", "01,02,03...", ""),
+            ("001,002...", "001,002,003...", "")
+        ],
+        default="1,2..."
+    ) # type: ignore
+
+class RenameObjectOperator(bpy.types.Operator):
+    bl_idname = "object.rename_object"
+    bl_label = "Rename Object"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        number_type = context.scene.number_type_properties.number_type
+        selected_object = context.active_object
+        obj_name = context.scene.obj_name
+
+        if selected_object is not None:
+            for i, obj in enumerate(context.selected_objects, start=context.scene.start_number):
+                if number_type == "1,2...":
+                    formatted_number = str(i)
+                elif number_type == "01,02...":
+                    formatted_number = f"{i:02d}"
+                elif number_type == "001,002...":
+                    formatted_number = f"{i:03d}"
+
+                obj.name = obj_name + formatted_number
+                obj.data.name = obj_name + formatted_number
+
+        return {'FINISHED'}
+
 class TextObjectParameters(bpy.types.PropertyGroup):
-    text_size: FloatProperty(name="Text Size")
+    text_size: FloatProperty(name="Text Size") # type: ignore
 
 
 class DISPLAY_CASE_AddonPreferences(bpy.types.AddonPreferences):
@@ -608,7 +660,6 @@ CLEANUP_OPERATORS = [
 
 RENAME_OPERATORS = [
     OBJECT_OT_RenameMeshes,
-    # OBJECT_OT_ExecuteCommand,
     OBJECT_OT_ClearRegex
 ]
 
@@ -627,6 +678,15 @@ REGISTER_CLASSES = PANELS + ARRANGE_OPERATORS + CLEANUP_OPERATORS + RENAME_OPERA
 def register():
     bpy.utils.register_class(DISPLAY_CASE_AddonPreferences)
     bpy.utils.register_class(RegexCommandProperty)
+    bpy.utils.register_class(NumberTypePropertyGroup)
+
+# --RENAMING TOOL PROPERTIES--
+# TODO: Check these are correctly loading before any panel/operator which uses them (if necessary)
+    bpy.types.Scene.obj_name = bpy.props.StringProperty(name="Name", default="Object")
+    bpy.types.Scene.start_number = bpy.props.IntProperty(name="Start Number", default=0, min=0)
+    bpy.types.Scene.number_type_properties = bpy.props.PointerProperty(type=NumberTypePropertyGroup)
+
+    bpy.utils.register_class(RenameObjectOperator)
 
     for r_class in REGISTER_CLASSES:
         bpy.utils.register_class(r_class)
@@ -690,11 +750,6 @@ def register():
         description="Enter regex to match and rename meshes",
         default=r""
     )
-    bpy.types.Scene.numbers_to_add = bpy.props.IntProperty(
-        name="Added Numbers",
-        description="Number of digits to append",
-        default=0
-    )
 
     # Asset gen properties
     bpy.types.Scene.asset_preview_path = bpy.props.StringProperty(
@@ -751,7 +806,6 @@ def unregister():
 
     # Delete renamer types
     del bpy.types.Scene.rename_regex
-    del bpy.types.Scene.numbers_to_add
 
     # Delete asset maker types
     del bpy.types.Scene.asset_preview_path
@@ -759,6 +813,13 @@ def unregister():
     del bpy.types.Scene.asset_images_suffix
     # TODO: Still needed all?
     del bpy.types.Scene.regex_commands
+
+# --RENAME OPERATOR PROPERTIES--
+    bpy.utils.unregister_class(RenameObjectOperator)
+    bpy.utils.unregister_class(NumberTypePropertyGroup)
+    del bpy.types.Scene.obj_name
+    del bpy.types.Scene.start_number
+    del bpy.types.Scene.number_type_properties
 
 
 if __name__ == "__main__":

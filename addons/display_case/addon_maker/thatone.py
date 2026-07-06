@@ -310,47 +310,42 @@ class ALB_OT_reload_icons(bpy.types.Operator):
 
 
 # rename tool start
-class NumberTypePropertyGroup(bpy.types.PropertyGroup):
-    number_type: bpy.props.EnumProperty(
-        name="Number Type",
-        items=[
-            ("1,2...", "1,2,3...", ""),
-            ("01,02...", "01,02,03...", ""),
-            ("001,002...", "001,002,003...", "")
-        ],
-        default="1,2..."
-    )
+# class NumberTypePropertyGroup(bpy.types.PropertyGroup):
+#     number_type: bpy.props.EnumProperty(
+#         name="Number Type",
+#         items=[
+#             ("1,2...", "1,2,3...", ""),
+#             ("01,02...", "01,02,03...", ""),
+#             ("001,002...", "001,002,003...", "")
+#         ],
+#         default="1,2..."
+#     ) # type: ignore
 
 
-class RenameObjectOperator(bpy.types.Operator):
-    bl_idname = "object.rename_object"
-    bl_label = "Rename Object"
-    # undo
-    bl_options = {'REGISTER', 'UNDO'}
+# class RenameObjectOperator(bpy.types.Operator):
+#     bl_idname = "object.rename_object"
+#     bl_label = "Rename Object"
+#     bl_options = {'REGISTER', 'UNDO'}
 
-    def execute(self, context):
-        number_type = context.scene.number_type_properties.number_type
-        selected_object = context.active_object
-        obj_name = context.scene.obj_name
+#     def execute(self, context):
+#         number_type = context.scene.number_type_properties.number_type
+#         selected_object = context.active_object
+#         obj_name = context.scene.obj_name
 
-        if selected_object is not None:
-            for i, obj in enumerate(context.selected_objects, start=context.scene.start_number):
-                # based on the number type, format the number
-                if number_type == "1,2...":
-                    formatted_number = str(i)
-                elif number_type == "01,02...":
-                    formatted_number = f"{i:02d}"
-                elif number_type == "001,002...":
-                    formatted_number = f"{i:03d}"
+#         if selected_object is not None:
+#             for i, obj in enumerate(context.selected_objects, start=context.scene.start_number):
+#                 if number_type == "1,2...":
+#                     formatted_number = str(i)
+#                 elif number_type == "01,02...":
+#                     formatted_number = f"{i:02d}"
+#                 elif number_type == "001,002...":
+#                     formatted_number = f"{i:03d}"
 
-                    # 使用格式化后的编号重命名对象
-                obj.name = obj_name + formatted_number
-                obj.data.name = obj_name + formatted_number
+#                 obj.name = obj_name + formatted_number
+#                 obj.data.name = obj_name + formatted_number
 
-        return {'FINISHED'}
+#         return {'FINISHED'}
 
-
-# rename tool end
 
 
 class ALB_OT_PreviousItem(bpy.types.Operator):
@@ -403,7 +398,6 @@ class ALB_OT_NextItem_studio_preset_library(bpy.types.Operator):
         return {'FINISHED'}
 
 
-# define
 
 author_name = ""
 tag_items = []
@@ -422,7 +416,7 @@ class ALB_AddonPreferences(bpy.types.AddonPreferences):
         name="Show Assets Browser UI",
         default=True,
         description="Enable or disable the Assets Browser UI."
-    )
+    ) # type: ignore
 
     # 繪製偏好設置的UI
     def draw(self, context):
@@ -1584,12 +1578,12 @@ def register():
     # rename tool start
     bpy.utils.register_class(RenameObjectOperator)
 
-    bpy.utils.register_class(NumberTypePropertyGroup)
-    bpy.types.Scene.obj_name = bpy.props.StringProperty(name="Name", default="Object")
-    # start number
-    bpy.types.Scene.start_number = bpy.props.IntProperty(name="Start Number", default=0, min=0)
+    # bpy.utils.register_class(NumberTypePropertyGroup)
+    # bpy.types.Scene.obj_name = bpy.props.StringProperty(name="Name", default="Object")
+    # # start number
+    # bpy.types.Scene.start_number = bpy.props.IntProperty(name="Start Number", default=0, min=0)
     # number type
-    bpy.types.Scene.number_type_properties = bpy.props.PointerProperty(type=NumberTypePropertyGroup)
+    # bpy.types.Scene.number_type_properties = bpy.props.PointerProperty(type=NumberTypePropertyGroup)
     # rename tool end
 
     bpy.utils.register_class(ALB_OT_PreviousItem)
@@ -1648,10 +1642,10 @@ def unregister():
     # rename tool start
     bpy.utils.unregister_class(RenameObjectOperator)
 
-    bpy.utils.unregister_class(NumberTypePropertyGroup)
-    del bpy.types.Scene.obj_name
-    del bpy.types.Scene.start_number
-    del bpy.types.Scene.number_type_properties
+    # bpy.utils.unregister_class(NumberTypePropertyGroup)
+    # del bpy.types.Scene.obj_name
+    # del bpy.types.Scene.start_number
+    # del bpy.types.Scene.number_type_properties
     # rename tool end
 
     bpy.utils.unregister_class(ALB_OT_PreviousItem)
