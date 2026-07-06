@@ -5,6 +5,9 @@ import os
 
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'bmp', 'tiff', 'tga', 'webp', 'hdr'}
 
+# Ordered list of stroke methods cycled by the hotkey operator.
+STROKE_METHOD_CYCLE = ('SPACE', 'DOTS', 'DRAG_DOT', 'AIRBRUSH', 'ANCHORED', 'LINE', 'CURVE')
+
 # ==========================================================
 # Properties
 # ==========================================================
@@ -14,19 +17,22 @@ class BrushCreatorProperties(bpy.types.PropertyGroup):
         name="Images Folder",
         subtype='DIR_PATH',
         description="Folder containing texture image files to import as brushes"
-    )
+    ) # type: ignore
     thumbs_dir: StringProperty(
         name="Thumbnails Folder",
         subtype='DIR_PATH',
         description="Folder with preview images matched by filename stem (optional)"
-    )
+    ) # type: ignore
     use_name_prepost: BoolProperty(
         name="Use Prefix / Suffix",
         default=False,
         description="Prepend/append strings to generated brush names"
-    )
-    name_pre: StringProperty(name="Prefix", description="Prepend to brush names")
-    name_post: StringProperty(name="Suffix", description="Append to brush names")
+    ) # type: ignore
+    name_pre: StringProperty(
+        name="Prefix", 
+        description="Prepend to brush names"
+        ) # type: ignore
+    name_post: StringProperty(name="Suffix", description="Append to brush names") # type: ignore
     brush_type: EnumProperty(
         name="Brush Type",
         items=[
@@ -35,7 +41,7 @@ class BrushCreatorProperties(bpy.types.PropertyGroup):
             ('BOTH', "Both", "Create both brush types"),
         ],
         default='BOTH'
-    )
+    ) # type: ignore
     stroke_type: EnumProperty(
         name="Stroke Type",
         items=[
@@ -44,9 +50,9 @@ class BrushCreatorProperties(bpy.types.PropertyGroup):
             ('BOTH', "Both", "Create one brush per stroke method"),
         ],
         default='SPACE'
-    )
+    ) # type: ignore
     tp_strength: FloatProperty(name="Paint Strength", default=1.0, min=0.0, max=2.0)
-    sculpt_strength: FloatProperty(name="Sculpt Strength", default=0.5, min=0.0, max=2.0)
+    sculpt_strength: FloatProperty(name="Sculpt Strength", default=0.3, min=0.0, max=2.0)
     texture_map_mode: EnumProperty(
         name="Texture Mapping",
         description="How the texture is mapped onto the brush stroke",
@@ -59,12 +65,13 @@ class BrushCreatorProperties(bpy.types.PropertyGroup):
             ('3D', "3D", "Use 3D texture coordinates (sculpt only)"),
         ],
         default='RANDOM'
-    )
+    ) # type: ignore
+
     # Internal texture settings (not exposed in panel)
-    img_use_existing: BoolProperty(default=True)
-    texture_calculate_alpha: BoolProperty(default=True)
-    texture_fake_user: BoolProperty(default=True)
-    texture_interpolation: BoolProperty(default=True)
+    img_use_existing: BoolProperty(default=True) # type: ignore
+    texture_calculate_alpha: BoolProperty(default=True) # type: ignore
+    texture_fake_user: BoolProperty(default=True) # type: ignore
+    texture_interpolation: BoolProperty(default=True) # type: ignore
 
 
 # ==========================================================
@@ -142,6 +149,7 @@ class BRUSHES_OT_import_from_folders(bpy.types.Operator):
             print(f"Preview warning for {brush.name}: {e}")
 
     def _new_brush(self, name, mode, texture, strength, stroke, thumb_path, map_mode='RANDOM'):
+        # TODO: add checkbox which asks user if they want duplicate brushes, defaulting to false. skip creation if checkbox is false and brush name already exists. display a warning/info box for anything not created in this way
         brush = bpy.data.brushes.new(name=self._unique_brush_name(name), mode=mode)
         brush.texture = texture
         brush.strength = strength
@@ -176,6 +184,7 @@ class BRUSHES_OT_import_from_folders(bpy.types.Operator):
             else:
                 strokes = [(props.stroke_type, '')]
 
+            # TODO: when creating `BOTH` the 'TEXTURE_PAINT' paint brush is named normally, but the 'SCULPT' brush is named with a "_01" suffix, as the brush name already exists. an additional suffix should be added in this situation (_sculpt, _tpaint)
             if props.brush_type in {'TEXTURE_PAINT', 'BOTH'}:
                 for stroke, suffix in strokes:
                     self._new_brush(base_name + suffix, 'TEXTURE_PAINT', texture, props.tp_strength, stroke, thumb, props.texture_map_mode)
@@ -229,12 +238,140 @@ def draw_panel(layout, context):
 
 
 # ==========================================================
+# Shared helper
+# ==========================================================
+
+def _active_brush(context):
+    ts = context.tool_settings
+    mode = context.mode
+    if mode == 'SCULPT':
+        return ts.sculpt.brush if ts.sculpt else None
+    if mode == 'PAINT_TEXTURE':
+        return ts.image_paint.brush if ts.image_paint else None
+    if mode == 'PAINT_WEIGHT':
+        return ts.weight_paint.brush if ts.weight_paint else None
+    if mode == 'PAINT_VERTEX':
+        return ts.vertex_paint.brush if ts.vertex_paint else None
+    return None
+
+
+# ==========================================================
+# Stroke-method operators
+# ==========================================================
+
+class BRUSH_OT_set_stroke_method(bpy.types.Operator):
+    """Set the active brush stroke method (used by the pie menu)"""
+    bl_idname = "brush.set_stroke_method"
+    bl_label = "Set Stroke Method"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    method: bpy.props.StringProperty()
+
+    @classmethod
+    def poll(cls, context):
+        return _active_brush(context) is not None
+
+    def execute(self, context):
+        brush = _active_brush(context)
+        brush.stroke_method = self.method
+        self.report({'INFO'}, f"Stroke: {self.method.replace('_', ' ').title()}")
+        return {'FINISHED'}
+
+
+class BRUSH_OT_cycle_stroke_method(bpy.types.Operator):
+    """Cycle the active brush through available stroke methods"""
+    bl_idname = "brush.cycle_stroke_method"
+    bl_label = "Cycle Brush Stroke Method"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return _active_brush(context) is not None
+
+    def execute(self, context):
+        brush = _active_brush(context)
+        current = brush.stroke_method
+        try:
+            idx = STROKE_METHOD_CYCLE.index(current)
+        except ValueError:
+            idx = 0
+        next_method = STROKE_METHOD_CYCLE[(idx + 1) % len(STROKE_METHOD_CYCLE)]
+        brush.stroke_method = next_method
+        self.report({'INFO'}, f"Stroke: {next_method.replace('_', ' ').title()}")
+        return {'FINISHED'}
+
+
+# ==========================================================
+# Stroke-method pie menu
+# ==========================================================
+
+# (stroke_method_id, display_label) in pie slice order:
+# W, E, S, N, NW, NE, SW  (Blender fills slices in this sequence)
+_PIE_ITEMS = (
+    ('SPACE',     "Space"),
+    ('ANCHORED',  "Anchored"),
+    ('DOTS',      "Dots"),
+    ('DRAG_DOT',  "Drag Dot"),
+    ('AIRBRUSH',  "Airbrush"),
+    ('LINE',      "Line"),
+    ('CURVE',     "Curve"),
+)
+
+# TODO: warning thrown when the addon is loaded :"Warning: 'brush.pie_menu' does not contain '_MT_' with prefix and suffix"
+class BRUSH_MT_stroke_method_pie(bpy.types.Menu):
+    bl_label = "Stroke Method"
+    bl_idname = "brush.pie_menu"
+
+    def draw(self, context):
+        pie = self.layout.menu_pie()
+        brush = _active_brush(context)
+        current = brush.stroke_method if brush else None
+
+        for method, label in _PIE_ITEMS:
+            op = pie.operator(
+                BRUSH_OT_set_stroke_method.bl_idname,
+                text=label,
+                depress=(current == method),
+            )
+            op.method = method
+
+
+# ==========================================================
+# Keymap
+# ==========================================================
+
+_addon_keymaps: list = []
+
+
+def register_keymaps():
+    wm = bpy.context.window_manager
+    kc = wm.keyconfigs.addon
+    if not kc:
+        return
+    km = kc.keymaps.new(name='3D View', space_type='VIEW_3D')
+    kmi = km.keymap_items.new(
+        'wm.call_menu_pie', type='M', value='PRESS', ctrl=True, alt=True,
+    )
+    kmi.properties.name = BRUSH_MT_stroke_method_pie.bl_idname
+    _addon_keymaps.append((km, kmi))
+
+
+def unregister_keymaps():
+    for km, kmi in _addon_keymaps:
+        km.keymap_items.remove(kmi)
+    _addon_keymaps.clear()
+
+
+# ==========================================================
 # Registration
 # ==========================================================
 
 classes = (
     BrushCreatorProperties,
     BRUSHES_OT_import_from_folders,
+    BRUSH_OT_set_stroke_method,
+    BRUSH_OT_cycle_stroke_method,
+    BRUSH_MT_stroke_method_pie,
 )
 
 
@@ -242,9 +379,11 @@ def register():
     for cls in classes:
         bpy.utils.register_class(cls)
     bpy.types.Scene.brush_creator_props = PointerProperty(type=BrushCreatorProperties)
+    register_keymaps()
 
 
 def unregister():
+    unregister_keymaps()
     del bpy.types.Scene.brush_creator_props
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)

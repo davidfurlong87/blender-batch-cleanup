@@ -1,7 +1,23 @@
+# ---------------------------------------------------------------------------
+# Reload guard
+# Must sit ABOVE `import bpy` so that `"bpy" in dir()` is False on first
+# load (bpy not yet in this module's namespace) and True on every subsequent
+# "Reload Scripts" call (bpy is already in the namespace from the previous
+# execution).  This forces all sub-modules to re-execute instead of being
+# served from Python's module cache.
+# ---------------------------------------------------------------------------
+if "bpy" in dir():
+    import importlib
+    from .utils import utils as _utils_mod
+    importlib.reload(_utils_mod)
+    importlib.reload(brushes_creator)
+
 import bpy
 import os
-from .display_case import *
+import re
+from mathutils import Vector
 from bpy.props import BoolProperty, EnumProperty, StringProperty, FloatProperty
+from .utils.utils import *
 from . import brushes_creator
 
 bl_info = {
@@ -14,25 +30,13 @@ bl_info = {
     "category": "Generic"
 }
 
-import bpy
-import re
-from .utils.utils import *
-from mathutils import Vector
-
 bl_category_name = "AssetOps"
 
 geo_nodes_text_group_name = "display_case_text"
 
-
-# # TODO: Delete?
-# COMMAND_FUNCTIONS = {
-#     "add_numbers": add_numbers,
-# }
-
-
 class RegexCommandProperty(bpy.types.PropertyGroup):
-    name: bpy.props.StringProperty()
-    function: bpy.props.StringProperty()
+    name: bpy.props.StringProperty() # type: ignore
+    function: bpy.props.StringProperty() # type: ignore
 
 
 # TODO: Copy for orient arrangements
@@ -568,6 +572,21 @@ class TextObjectParameters(bpy.types.PropertyGroup):
     text_size: FloatProperty(name="Text Size")
 
 
+class DISPLAY_CASE_AddonPreferences(bpy.types.AddonPreferences):
+    """Shown in Edit > Preferences > Add-ons > display_case."""
+    bl_idname = __name__
+
+    def draw(self, context):
+        layout = self.layout
+        layout.label(text="Hotkeys", icon='KEYINGSET')
+        col = layout.column()
+        for _km, kmi in brushes_creator._addon_keymaps:
+            row = col.row()
+            row.label(text=kmi.name)
+            row.prop(kmi, 'active', text="")
+            row.prop(kmi, 'type', text="", full_event=True)
+
+
 PANELS = [
     ASSETOPS_PT_main_panel,
 ]
@@ -606,6 +625,7 @@ REGISTER_CLASSES = PANELS + ARRANGE_OPERATORS + CLEANUP_OPERATORS + RENAME_OPERA
 
 
 def register():
+    bpy.utils.register_class(DISPLAY_CASE_AddonPreferences)
     bpy.utils.register_class(RegexCommandProperty)
 
     for r_class in REGISTER_CLASSES:
@@ -712,6 +732,7 @@ def unregister():
     del bpy.types.WindowManager.asset_ops_tab
 
     bpy.utils.unregister_class(RegexCommandProperty)
+    bpy.utils.unregister_class(DISPLAY_CASE_AddonPreferences)
 
     for r_class in REGISTER_CLASSES:
         bpy.utils.unregister_class(r_class)
