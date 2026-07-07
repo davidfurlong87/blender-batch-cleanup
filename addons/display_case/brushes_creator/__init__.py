@@ -67,6 +67,12 @@ class BrushCreatorProperties(bpy.types.PropertyGroup):
         default='RANDOM'
     ) # type: ignore
 
+    sculpt_front_faces_only: BoolProperty(
+        name="Front Faces Only",
+        description="Only apply the sculpt brush to front-facing faces (sculpt brushes only)",
+        default=True,
+    ) # type: ignore
+
     # Internal texture settings (not exposed in panel)
     img_use_existing: BoolProperty(default=True) # type: ignore
     texture_calculate_alpha: BoolProperty(default=True) # type: ignore
@@ -148,7 +154,7 @@ class BRUSHES_OT_import_from_folders(bpy.types.Operator):
         except Exception as e:
             print(f"Preview warning for {brush.name}: {e}")
 
-    def _new_brush(self, name, mode, texture, strength, stroke, thumb_path, map_mode='RANDOM'):
+    def _new_brush(self, name, mode, texture, strength, stroke, thumb_path, map_mode='RANDOM', front_faces_only=False):
         # TODO: add checkbox which asks user if they want duplicate brushes, defaulting to false. skip creation if checkbox is false and brush name already exists. display a warning/info box for anything not created in this way
         brush = bpy.data.brushes.new(name=self._unique_brush_name(name), mode=mode)
         brush.texture = texture
@@ -157,6 +163,8 @@ class BRUSHES_OT_import_from_folders(bpy.types.Operator):
             brush.stroke_method = stroke
         if brush.texture_slot:
             brush.texture_slot.map_mode = map_mode
+        if mode == 'SCULPT' and hasattr(brush, 'use_frontface'):
+            brush.use_frontface = front_faces_only
         self._apply_preview(brush, thumb_path)
         return brush
 
@@ -191,7 +199,7 @@ class BRUSHES_OT_import_from_folders(bpy.types.Operator):
 
             if props.brush_type in {'SCULPT', 'BOTH'}:
                 for stroke, suffix in strokes:
-                    self._new_brush(base_name + suffix, 'SCULPT', texture, props.sculpt_strength, stroke, thumb, props.texture_map_mode)
+                    self._new_brush(base_name + suffix, 'SCULPT', texture, props.sculpt_strength, stroke, thumb, props.texture_map_mode, props.sculpt_front_faces_only)
 
             return True
 
@@ -223,6 +231,7 @@ def draw_panel(layout, context):
         box.prop(props, "tp_strength")
     if bt in {'SCULPT', 'BOTH'}:
         box.prop(props, "sculpt_strength")
+        box.prop(props, "sculpt_front_faces_only")
     box.separator()
     box.prop(props, "texture_map_mode")
 

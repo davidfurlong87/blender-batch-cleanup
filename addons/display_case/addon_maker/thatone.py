@@ -309,44 +309,6 @@ class ALB_OT_reload_icons(bpy.types.Operator):
         return {'FINISHED'}
 
 
-# rename tool start
-# class NumberTypePropertyGroup(bpy.types.PropertyGroup):
-#     number_type: bpy.props.EnumProperty(
-#         name="Number Type",
-#         items=[
-#             ("1,2...", "1,2,3...", ""),
-#             ("01,02...", "01,02,03...", ""),
-#             ("001,002...", "001,002,003...", "")
-#         ],
-#         default="1,2..."
-#     ) # type: ignore
-
-
-# class RenameObjectOperator(bpy.types.Operator):
-#     bl_idname = "object.rename_object"
-#     bl_label = "Rename Object"
-#     bl_options = {'REGISTER', 'UNDO'}
-
-#     def execute(self, context):
-#         number_type = context.scene.number_type_properties.number_type
-#         selected_object = context.active_object
-#         obj_name = context.scene.obj_name
-
-#         if selected_object is not None:
-#             for i, obj in enumerate(context.selected_objects, start=context.scene.start_number):
-#                 if number_type == "1,2...":
-#                     formatted_number = str(i)
-#                 elif number_type == "01,02...":
-#                     formatted_number = f"{i:02d}"
-#                 elif number_type == "001,002...":
-#                     formatted_number = f"{i:03d}"
-
-#                 obj.name = obj_name + formatted_number
-#                 obj.data.name = obj_name + formatted_number
-
-#         return {'FINISHED'}
-
-
 
 class ALB_OT_PreviousItem(bpy.types.Operator):
     bl_idname = "alb.previous_item"
@@ -640,18 +602,6 @@ def restore_view3d_context(view_context):
             rv3d.view_distance = view_context["view_distance"]
             break
 
-
-# class VIEW3D_PT_CustomPanel(bpy.types.Panel):
-#     bl_label = "View3D Snapshot"
-#     bl_idname = "VIEW3D_PT_custom_panel"
-#     bl_space_type = 'VIEW_3D'
-#     bl_region_type = 'UI'
-#     bl_category = 'View3D Snapshot'
-
-#     def draw(self, context):
-#         layout = self.layout
-#         layout.operator("alb.record_view")
-#         layout.operator("alb.restore_view")
 
 class ALB_OT_origin_to_bottom(bpy.types.Operator):
     bl_idname = "alb.origin_to_bottom"
@@ -953,49 +903,49 @@ class VIEW3D_OT_toggle_camera_view(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class ALB_OT_UpdateButDontRender(bpy.types.Operator):
-    bl_idname = "alb.update_but_dont_render"
-    bl_label = "Update But Don't Render"
-    bl_description = "Update but don't render the selected object"
-    bl_options = {'REGISTER', 'UNDO'}
+# class ALB_OT_UpdateButDontRender(bpy.types.Operator):
+#     bl_idname = "alb.update_but_dont_render"
+#     bl_label = "Update But Don't Render"
+#     bl_description = "Update but don't render the selected object"
+#     bl_options = {'REGISTER', 'UNDO'}
 
-    def execute(self, context):
-        settings = bpy.context.scene.alb_settings
+#     def execute(self, context):
+#         settings = bpy.context.scene.alb_settings
 
-        # if selected any object
-        if context.selected_objects:
-            for obj in context.selected_objects:
+#         # if selected any object
+#         if context.selected_objects:
+#             for obj in context.selected_objects:
 
-                with bpy.context.temp_override(id=obj):
+#                 with bpy.context.temp_override(id=obj):
 
-                    if obj.asset_data is not None:
-                        if settings.author_name != "":
-                            obj.asset_data.author = settings.author_name
+#                     if obj.asset_data is not None:
+#                         if settings.author_name != "":
+#                             obj.asset_data.author = settings.author_name
 
-                        if settings.remove_tags:
+#                         if settings.remove_tags:
 
-                            while len(obj.asset_data.tags) > 0:
-                                obj.asset_data.tags.remove(obj.asset_data.tags[0])
+#                             while len(obj.asset_data.tags) > 0:
+#                                 obj.asset_data.tags.remove(obj.asset_data.tags[0])
 
-                        for tag_name in settings.tag_items.split(','):
-                            tag_name = tag_name.strip()
-                            if tag_name:
-                                new_tag = obj.asset_data.tags.new(name=tag_name)
-                        if settings.assets_description != "":
-                            obj.asset_data.description = settings.assets_description
-                    else:
-                        print("Active object does not have asset data.")
+#                         for tag_name in settings.tag_items.split(','):
+#                             tag_name = tag_name.strip()
+#                             if tag_name:
+#                                 new_tag = obj.asset_data.tags.new(name=tag_name)
+#                         if settings.assets_description != "":
+#                             obj.asset_data.description = settings.assets_description
+#                     else:
+#                         print("Active object does not have asset data.")
 
-                base_path = context.scene.alb_base_path
-                output_path = os.path.join(base_path, f"{obj.name}.png")
-                # if the preview image is exist
-                if os.path.exists(output_path):
+#                 base_path = context.scene.alb_base_path
+#                 output_path = os.path.join(base_path, f"{obj.name}.png")
+#                 # if the preview image is exist
+#                 if os.path.exists(output_path):
 
-                    if output_path:
-                        with bpy.context.temp_override(id=obj):
-                            bpy.ops.ed.lib_id_load_custom_preview(filepath=output_path)
+#                     if output_path:
+#                         with bpy.context.temp_override(id=obj):
+#                             bpy.ops.ed.lib_id_load_custom_preview(filepath=output_path)
 
-        return {'FINISHED'}
+#         return {'FINISHED'}
 
 
 # UI
@@ -1469,7 +1419,7 @@ class ALB_OT_BrowseFolder(bpy.types.Operator):
     bl_label = "Choose Assets Folder"
     directory: bpy.props.StringProperty(
         subtype='DIR_PATH',
-    )
+    ) # type: ignore
 
     def execute(self, context):
         if self.directory:

@@ -201,7 +201,6 @@ def register():
         description="Path to save rendered previews",
     )
     bpy.types.Scene.asset_settings = bpy.props.PointerProperty(type=AssetSettings)
-    bpy.types.Scene.brush_creator_props = PointerProperty(type=AssetCreationProperties)
     bpy.types.Scene.show_assets_settings_ui = bpy.props.BoolProperty(
         name="Show Assets Settings",
         description="Show or hide assets settings",
@@ -210,7 +209,6 @@ def register():
 
 def unregister():
     del bpy.types.Scene.show_assets_settings_ui
-    del bpy.types.Scene.brush_creator_props
     del bpy.types.Scene.asset_settings
     del bpy.types.Scene.asset_image_output_path
     for cls in reversed(classes):
