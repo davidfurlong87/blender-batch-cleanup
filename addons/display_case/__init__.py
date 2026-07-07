@@ -148,39 +148,7 @@ class ASSETOPS_PT_main_panel(bpy.types.Panel):
         box.operator("object.assign_vertex_group_by_name")
 
     def _draw_assets(self, layout, context):
-        scn = context.scene
-        box = layout.box()
-
-        box.prop(scn, "show_assets_settings_ui", icon=("INFO" if scn.show_assets_settings_ui else "INFO"),
-             text="【 Assets Settings 】")
-        if scn.show_assets_settings_ui:
-            settings = context.scene.asset_settings
-        box.prop(settings, "author_name")
-        box.prop(settings, "assets_description")
-
-        box.label(text="Separate tags with commas.", icon='INFO')
-        box.prop(settings, "tag_items")
-
-        box.prop(settings, "remove_tags")
-
-        box.operator("object.update_asset_settings", text="Update Asset Settings", icon="FILE_REFRESH")
-        
-        # ------
-
-        box = layout.box()
-        box.label(text="Asset Preview Images", icon='INFO')
-        row = box.row(align=True)
-        row.prop(context.scene, "asset_preview_path", text="")
-        row.operator("object.browse_folder", text="", icon='FILE_FOLDER')
-
-        box = layout.box()
-        row = box.row()
-        row.label(text="Prefix:")
-        row.prop(context.scene, "asset_images_prefix", text="")
-        row = box.row()
-        row.label(text="Suffix:")
-        row.prop(context.scene, "asset_images_suffix", text="")
-        box.operator("object.add_asset_images", text="Build Assets With Images", icon='ASSET_MANAGER')
+        assets_creation.draw_panel(layout, context)
 
 class OBJECT_OT_create_full_vertex_group(bpy.types.Operator):
     """Create a vertex group and assign all vertices to it"""
@@ -770,22 +738,6 @@ def register():
         default=r""
     )
 
-    # Asset gen properties
-    bpy.types.Scene.asset_preview_path = bpy.props.StringProperty(
-        name="Image Path",
-        description="Path to pre-generated asset renders",
-    )
-    bpy.types.Scene.asset_images_prefix = bpy.props.StringProperty(
-        name="File Prefix",
-        description="Prefix for asset preview images",
-        default="prefix_placeholder"
-    )
-    bpy.types.Scene.asset_images_suffix = bpy.props.StringProperty(
-        name="File Suffix",
-        description="Suffix for asset preview images",
-        default="suffix_placeholder"
-    )
-
     bpy.types.WindowManager.asset_ops_tab = EnumProperty(
         name="Tab",
         items=[
@@ -828,10 +780,6 @@ def unregister():
     # Delete renamer types
     del bpy.types.Scene.rename_regex
 
-    # Delete asset maker types
-    del bpy.types.Scene.asset_preview_path
-    del bpy.types.Scene.asset_images_prefix
-    del bpy.types.Scene.asset_images_suffix
     # TODO: Still needed all?
     del bpy.types.Scene.regex_commands
 
