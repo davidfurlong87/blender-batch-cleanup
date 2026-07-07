@@ -2,6 +2,7 @@ import bpy
 from bpy.props import BoolProperty, StringProperty, FloatProperty, EnumProperty, PointerProperty
 import pathlib
 import os
+import uuid as _uuid_mod
 
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'bmp', 'tiff', 'tga', 'webp', 'hdr'}
 
@@ -73,11 +74,111 @@ class BrushCreatorProperties(bpy.types.PropertyGroup):
         default=True,
     ) # type: ignore
 
+    catalog_path: StringProperty(
+        name="Catalog",
+        description=(
+            "Asset catalog path to assign brushes to (e.g. 'Brushes' or 'Brushes/Sculpt'). "
+            "The .blend file must be saved for this to take effect"
+        ),
+        default="Brushes",
+    )  # type: ignore
+
     # Internal texture settings (not exposed in panel)
     img_use_existing: BoolProperty(default=True) # type: ignore
     texture_calculate_alpha: BoolProperty(default=True) # type: ignore
     texture_fake_user: BoolProperty(default=True) # type: ignore
     texture_interpolation: BoolProperty(default=True) # type: ignore
+
+
+# ==========================================================
+# Catalog helpers
+# ==========================================================
+
+_CATS_HEADER = (
+    "# This is an Asset Catalog Definition file for Blender.\n"
+    "#\n"
+    "# Empty lines and lines starting with `#` will be ignored.\n"
+    '# The remaining lines are of the format "UUID:catalog/path/for/assets:simple catalog name"\n'
+    "\n"
+    "VERSION 1\n"
+    "\n"
+)
+
+
+def _find_cats_file(blend_filepath: str) -> str:
+    """Return the path to the correct blender_assets.cats.txt for this blend file.
+
+    Strategy:
+    1. Check every asset library registered in Blender preferences.  If the
+       blend file lives inside one of those libraries, use that library root's
+       catalog file — this is exactly the file Blender reads for the library.
+    2. If the blend file is not inside any registered library, fall back to
+       creating a catalog file next to the blend file itself.
+    """
+    abs_blend = os.path.abspath(blend_filepath)
+    blend_dir = os.path.dirname(abs_blend)
+
+    try:
+        for lib in bpy.context.preferences.filepaths.asset_libraries:
+            lib_root = os.path.abspath(bpy.path.abspath(lib.path))
+            # Normalise separators before comparison
+            if abs_blend.startswith(lib_root + os.sep):
+                return os.path.join(lib_root, "blender_assets.cats.txt")
+    except Exception as e:
+        print(f"[brushes_creator] Could not read asset library preferences: {e}")
+
+    # Blend file is not inside any registered library — write next to it
+    return os.path.join(blend_dir, "blender_assets.cats.txt")
+
+
+def _get_or_create_catalog(catalog_path: str) -> str | None:
+    """Ensure *catalog_path* (e.g. 'Brushes/Sculpt') exists in the
+    nearest blender_assets.cats.txt found by walking up from the blend file.
+    Returns the UUID string for the leaf catalog, or None when the
+    .blend file has not been saved yet."""
+    blend_filepath = bpy.data.filepath
+    if not blend_filepath:
+        return None
+
+    cats_file = _find_cats_file(blend_filepath)
+
+    # Parse existing file --------------------------------------------------
+    catalog_map: dict[str, str] = {}   # path -> uuid
+    existing_lines: list[str] = []
+
+    if os.path.exists(cats_file):
+        with open(cats_file, 'r', encoding='utf-8') as fh:
+            for raw in fh:
+                line = raw.rstrip('\n')
+                # Skip header / comment / version lines
+                if line.startswith('#') or not line.strip() or line.startswith('VERSION'):
+                    existing_lines.append(line)
+                    continue
+                parts = line.split(':', 2)
+                if len(parts) == 3:
+                    cat_uuid, cat_path, _ = parts
+                    catalog_map[cat_path] = cat_uuid
+                    existing_lines.append(line)
+
+    # Build ancestor chain (create "Brushes" before "Brushes/Sculpt") ------
+    segments = catalog_path.split('/')
+    new_entries: list[str] = []
+    for depth in range(1, len(segments) + 1):
+        ancestor = '/'.join(segments[:depth])
+        if ancestor not in catalog_map:
+            new_uuid = str(_uuid_mod.uuid4())
+            catalog_map[ancestor] = new_uuid
+            new_entries.append(f"{new_uuid}:{ancestor}:{segments[depth - 1]}")
+
+    if new_entries:
+        if not os.path.exists(cats_file):
+            with open(cats_file, 'w', encoding='utf-8') as fh:
+                fh.write(_CATS_HEADER)
+            existing_lines = [line.rstrip('\n') for line in _CATS_HEADER.splitlines()]
+        with open(cats_file, 'a', encoding='utf-8') as fh:
+            fh.write('\n'.join(new_entries) + '\n')
+
+    return catalog_map.get(catalog_path)
 
 
 # ==========================================================
@@ -109,9 +210,21 @@ class BRUSHES_OT_import_from_folders(bpy.types.Operator):
             self.report({'WARNING'}, "No supported images found in the images folder")
             return {'CANCELLED'}
 
+        # Resolve (or create) the asset catalog before the import loop
+        catalog_path = props.catalog_path.strip()
+        catalog_id = None
+        if catalog_path:
+            catalog_id = _get_or_create_catalog(catalog_path)
+            if catalog_id is None:
+                self.report({'WARNING'},
+                    "Brushes created without a catalog — save the .blend file first, then re-import")
+            else:
+                cats_file = _find_cats_file(bpy.data.filepath)
+                print(f"[brushes_creator] Catalog '{catalog_path}' ({catalog_id}) written to: {cats_file}")
+
         created = sum(
             1 for f in files
-            if self._create_brush_from_file(os.path.join(tex_dir, f), thumb_dir, props)
+            if self._create_brush_from_file(os.path.join(tex_dir, f), thumb_dir, props, catalog_id)
         )
 
         if created:
@@ -162,7 +275,8 @@ class BRUSHES_OT_import_from_folders(bpy.types.Operator):
         except Exception as e:
             print(f"Preview warning for {brush.name}: {e}")
 
-    def _new_brush(self, name, mode, texture, strength, stroke, thumb_path, map_mode='RANDOM', front_faces_only=False):
+    def _new_brush(self, name, mode, texture, strength, stroke, thumb_path,
+                   map_mode='RANDOM', front_faces_only=False, catalog_id=None):
         # TODO: add checkbox which asks user if they want duplicate brushes, defaulting to false. skip creation if checkbox is false and brush name already exists. display a warning/info box for anything not created in this way
         brush = bpy.data.brushes.new(name=self._unique_brush_name(name), mode=mode)
         brush.texture = texture
@@ -170,6 +284,8 @@ class BRUSHES_OT_import_from_folders(bpy.types.Operator):
         if hasattr(brush, 'use_fake_user'):
             brush.use_fake_user = True
         brush.asset_mark()
+        if catalog_id and brush.asset_data is not None:
+            brush.asset_data.catalog_id = catalog_id
         if stroke and hasattr(brush, 'stroke_method'):
             brush.stroke_method = stroke
         if brush.texture_slot:
@@ -179,7 +295,7 @@ class BRUSHES_OT_import_from_folders(bpy.types.Operator):
         self._apply_preview(brush, thumb_path)
         return brush
 
-    def _create_brush_from_file(self, filepath, thumb_dir, props):
+    def _create_brush_from_file(self, filepath, thumb_dir, props, catalog_id=None):
         try:
             stem = pathlib.Path(filepath).stem
             base_name = "".join(c for c in stem if c.isalnum() or c in ' _-')
@@ -206,11 +322,11 @@ class BRUSHES_OT_import_from_folders(bpy.types.Operator):
             # TODO: when creating `BOTH` the 'TEXTURE_PAINT' paint brush is named normally, but the 'SCULPT' brush is named with a "_01" suffix, as the brush name already exists. an additional suffix should be added in this situation (_sculpt, _tpaint)
             if props.brush_type in {'TEXTURE_PAINT', 'BOTH'}:
                 for stroke, suffix in strokes:
-                    self._new_brush(base_name + suffix, 'TEXTURE_PAINT', texture, props.tp_strength, stroke, thumb, props.texture_map_mode)
+                    self._new_brush(base_name + suffix, 'TEXTURE_PAINT', texture, props.tp_strength, stroke, thumb, props.texture_map_mode, catalog_id=catalog_id)
 
             if props.brush_type in {'SCULPT', 'BOTH'}:
                 for stroke, suffix in strokes:
-                    self._new_brush(base_name + suffix, 'SCULPT', texture, props.sculpt_strength, stroke, thumb, props.texture_map_mode, props.sculpt_front_faces_only)
+                    self._new_brush(base_name + suffix, 'SCULPT', texture, props.sculpt_strength, stroke, thumb, props.texture_map_mode, props.sculpt_front_faces_only, catalog_id=catalog_id)
 
             return True
 
@@ -253,6 +369,12 @@ def draw_panel(layout, context):
         row = box.row()
         row.prop(props, "name_pre")
         row.prop(props, "name_post")
+
+    box = layout.box()
+    box.label(text="Asset Catalog", icon='ASSET_MANAGER')
+    box.prop(props, "catalog_path", text="Path")
+    if not bpy.data.filepath:
+        box.label(text="Save the .blend file to enable catalog assignment", icon='ERROR')
 
     layout.operator("brushes.import_from_folders", icon='BRUSHES_ALL')
 
