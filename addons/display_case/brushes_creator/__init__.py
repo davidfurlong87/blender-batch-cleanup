@@ -148,15 +148,17 @@ class BRUSHES_OT_import_from_folders(bpy.types.Operator):
         if not thumb_path or not os.path.exists(thumb_path):
             return
         try:
+            # Toolbar icon (3D viewport brush selector, Blender 3.x compat)
             if hasattr(brush, 'use_custom_icon'):
                 brush.use_custom_icon = True
                 brush.icon_filepath = thumb_path
-            if hasattr(brush, 'asset_mark'):
-                with bpy.context.temp_override(id=brush):
-                    bpy.ops.ed.lib_id_load_custom_preview(filepath=thumb_path)
-            if hasattr(brush, 'asset_data') and brush.asset_data is not None:
-                if hasattr(brush.asset_data, 'preview_icon_file_path'):
-                    brush.asset_data.preview_icon_file_path = thumb_path
+
+            if brush.asset_data is not None:
+                window = bpy.context.window_manager.windows[0]
+                with bpy.context.temp_override(window=window, id=brush):
+                    result = bpy.ops.ed.lib_id_load_custom_preview(filepath=thumb_path)
+                if 'FINISHED' not in result:
+                    print(f"[brushes_creator] Preview not loaded for '{brush.name}' (operator returned {result})")
         except Exception as e:
             print(f"Preview warning for {brush.name}: {e}")
 
