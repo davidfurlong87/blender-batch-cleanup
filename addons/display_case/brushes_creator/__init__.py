@@ -326,10 +326,8 @@ _PIE_ITEMS = (
     ('CURVE',     "Curve"),
 )
 
-# TODO: warning thrown when the addon is loaded :"Warning: 'brush.pie_menu' does not contain '_MT_' with prefix and suffix"
 class BRUSH_MT_stroke_method_pie(bpy.types.Menu):
     bl_label = "Stroke Method"
-    bl_idname = "brush.pie_menu"
 
     def draw(self, context):
         pie = self.layout.menu_pie()
@@ -361,7 +359,7 @@ def register_keymaps():
     kmi = km.keymap_items.new(
         'wm.call_menu_pie', type='M', value='PRESS', ctrl=True, alt=True,
     )
-    kmi.properties.name = BRUSH_MT_stroke_method_pie.bl_idname
+    kmi.properties.name = BRUSH_MT_stroke_method_pie.__name__
     _addon_keymaps.append((km, kmi))
 
 
