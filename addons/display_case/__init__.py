@@ -11,6 +11,7 @@ if "bpy" in dir():
     from .utils import utils as _utils_mod
     importlib.reload(_utils_mod)
     importlib.reload(brushes_creator)
+    importlib.reload(assets_creation)
 
 import bpy
 import os
@@ -19,6 +20,7 @@ from mathutils import Vector
 from bpy.props import BoolProperty, EnumProperty, StringProperty, FloatProperty
 from .utils.utils import *
 from . import brushes_creator
+from . import assets_creation
 
 bl_info = {
     "name": "display_case",
@@ -82,6 +84,7 @@ class ASSETOPS_PT_main_panel(bpy.types.Panel):
             self._draw_assets(layout, context)
         elif tab == 'BRUSHES':
             brushes_creator.draw_panel(layout, context)
+        
 
     def _draw_display(self, layout, context):
         box = layout.box()
@@ -133,7 +136,7 @@ class ASSETOPS_PT_main_panel(bpy.types.Panel):
         box.label(text="REGEX Rename", icon='SORTALPHA')
 
         box.prop(context.scene, "rename_regex")
-        box.prop(context.scene, "numbers_to_add", text="Add Number")
+        # box.prop(context.scene, "numbers_to_add", text="Add Number")
         row = box.row(align=True)
         row.operator("object.rename_meshes", text="Rename")
         row.operator("object.clear_regex", text="Clear")
@@ -145,6 +148,25 @@ class ASSETOPS_PT_main_panel(bpy.types.Panel):
         box.operator("object.assign_vertex_group_by_name")
 
     def _draw_assets(self, layout, context):
+        scn = context.scene
+        box = layout.box()
+
+        box.prop(scn, "show_assets_settings_ui", icon=("INFO" if scn.show_assets_settings_ui else "INFO"),
+             text="【 Assets Settings 】")
+        if scn.show_assets_settings_ui:
+            settings = context.scene.asset_settings
+        box.prop(settings, "author_name")
+        box.prop(settings, "assets_description")
+
+        box.label(text="Separate tags with commas.", icon='INFO')
+        box.prop(settings, "tag_items")
+
+        box.prop(settings, "remove_tags")
+
+        box.operator("object.update_asset_settings", text="Update Asset Settings", icon="FILE_REFRESH")
+        
+        # ------
+
         box = layout.box()
         box.label(text="Asset Preview Images", icon='INFO')
         row = box.row(align=True)
@@ -528,61 +550,61 @@ class OBJECT_OT_ClearRegex(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class OBJECT_OT_BrowseFolder(bpy.types.Operator):
-    bl_idname = "object.browse_folder"
-    bl_label = "Choose Assets Folder"
-    directory: bpy.props.StringProperty(
-        subtype='DIR_PATH',
-    )
+# class OBJECT_OT_BrowseFolder(bpy.types.Operator):
+#     bl_idname = "object.browse_folder"
+#     bl_label = "Choose Assets Folder"
+#     directory: bpy.props.StringProperty(
+#         subtype='DIR_PATH',
+#     )
 
-    def execute(self, context):
-        if self.directory:
-            context.scene.asset_preview_path = self.directory
-        return {'FINISHED'}
+#     def execute(self, context):
+#         if self.directory:
+#             context.scene.asset_preview_path = self.directory
+#         return {'FINISHED'}
 
-    def invoke(self, context, event):
-        context.window_manager.fileselect_add(self)
-        return {'RUNNING_MODAL'}
-
-
-class OBJECT_OT_Add_Asset_Images(bpy.types.Operator):
-    bl_idname = "object.add_asset_images"
-    bl_label = "Assigns pre-built asset renders to assets"
+#     def invoke(self, context, event):
+#         context.window_manager.fileselect_add(self)
+#         return {'RUNNING_MODAL'}
 
 
-    # file_suffix: bpy.props.StringProperty(name="suffix", default=".png")
-    # filter_glob: bpy.props.StringProperty(
-    #     default="*.txt",
-    #     options={'HIDDEN'},
-    #     maxlen=255,  # Max internal buffer length, longer would be clamped.
-    # )
+# class OBJECT_OT_Add_Asset_Images(bpy.types.Operator):
+#     bl_idname = "object.add_asset_images"
+#     bl_label = "Assigns pre-built asset renders to assets"
 
-    def execute(self, context):
-        # bpy.ops.asset.mark()
-        prefix = bpy.context.scene.asset_images_prefix
-        suffix = bpy.context.scene.asset_images_suffix
 
-        assets_dir = bpy.types.Scene.asset_preview_path
-        all_images = os.listdir(assets_dir)
-        print(f"images_amount: {len(all_images)}")
-        image_extensions = [".png", ".jpg", ".jpeg", ".tiff", ".bmp", ".tga", ".exr", ".dds", ".webp"]
+#     # file_suffix: bpy.props.StringProperty(name="suffix", default=".png")
+#     # filter_glob: bpy.props.StringProperty(
+#     #     default="*.txt",
+#     #     options={'HIDDEN'},
+#     #     maxlen=255,  # Max internal buffer length, longer would be clamped.
+#     # )
 
-        for obj in get_selected_meshes():
-            pattern = re.compile(re.escape(prefix + obj.name + suffix) + r"\\.(png|jpg|jpeg|tiff|bmp|tga|exr|dds|webp)$", re.IGNORECASE)
+#     def execute(self, context):
+#         # bpy.ops.asset.mark()
+#         prefix = bpy.context.scene.asset_images_prefix
+#         suffix = bpy.context.scene.asset_images_suffix
 
-        #      preview_path = os.path.join(assets_dir, obj.name + ".png")  # Adjust extension if needed
-        #     obj.asset_mark()
-        #     preview_path = os.path.join(assets_dir, obj.name + ".png")  # Adjust extension if needed
-        #     if os.path.exists(preview_path):
-        #         obj.asset_data.preview_icon_file_path = preview_path
-        #     else:
-        #         self.report({'WARNING'}, f"Preview not found for {obj.name}")
-        return {'FINISHED'}
+#         assets_dir = bpy.types.Scene.asset_preview_path
+#         all_images = os.listdir(assets_dir)
+#         print(f"images_amount: {len(all_images)}")
+#         image_extensions = [".png", ".jpg", ".jpeg", ".tiff", ".bmp", ".tga", ".exr", ".dds", ".webp"]
 
-    # TODO: Add folder path == true
-    # def invoke(self, context, event):
-    #     context.window_manager.fileselect_add(self)
-    #     return {'RUNNING_MODAL'}
+#         for obj in get_selected_meshes():
+#             pattern = re.compile(re.escape(prefix + obj.name + suffix) + r"\\.(png|jpg|jpeg|tiff|bmp|tga|exr|dds|webp)$", re.IGNORECASE)
+
+#         #      preview_path = os.path.join(assets_dir, obj.name + ".png")  # Adjust extension if needed
+#         #     obj.asset_mark()
+#         #     preview_path = os.path.join(assets_dir, obj.name + ".png")  # Adjust extension if needed
+#         #     if os.path.exists(preview_path):
+#         #         obj.asset_data.preview_icon_file_path = preview_path
+#         #     else:
+#         #         self.report({'WARNING'}, f"Preview not found for {obj.name}")
+#         return {'FINISHED'}
+
+#     # TODO: Add folder path == true
+#     # def invoke(self, context, event):
+#     #     context.window_manager.fileselect_add(self)
+#     #     return {'RUNNING_MODAL'}
 
 
 class NumberTypePropertyGroup(bpy.types.PropertyGroup):
@@ -663,16 +685,13 @@ RENAME_OPERATORS = [
     OBJECT_OT_ClearRegex
 ]
 
-ASSET_MAKER_OPERATORS = [
-    OBJECT_OT_BrowseFolder,
-    OBJECT_OT_Add_Asset_Images
-]
+
 
 PARAMETER_GROUPS = [
     TextObjectParameters
 ]
 
-REGISTER_CLASSES = PANELS + ARRANGE_OPERATORS + CLEANUP_OPERATORS + RENAME_OPERATORS + ASSET_MAKER_OPERATORS + PARAMETER_GROUPS
+REGISTER_CLASSES = PANELS + ARRANGE_OPERATORS + CLEANUP_OPERATORS + RENAME_OPERATORS  + PARAMETER_GROUPS
 
 
 def register():
@@ -779,9 +798,11 @@ def register():
     )
 
     brushes_creator.register()
+    assets_creation.register()
 
 
 def unregister():
+    assets_creation.unregister()
     brushes_creator.unregister()
 
     del bpy.types.WindowManager.asset_ops_tab
