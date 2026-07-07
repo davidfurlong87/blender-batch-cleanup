@@ -151,6 +151,12 @@ class BRUSHES_OT_import_from_folders(bpy.types.Operator):
             if hasattr(brush, 'use_custom_icon'):
                 brush.use_custom_icon = True
                 brush.icon_filepath = thumb_path
+            if hasattr(brush, 'asset_mark'):
+                with bpy.context.temp_override(id=brush):
+                    bpy.ops.ed.lib_id_load_custom_preview(filepath=thumb_path)
+            if hasattr(brush, 'asset_data') and brush.asset_data is not None:
+                if hasattr(brush.asset_data, 'preview_icon_file_path'):
+                    brush.asset_data.preview_icon_file_path = thumb_path
         except Exception as e:
             print(f"Preview warning for {brush.name}: {e}")
 
@@ -159,6 +165,9 @@ class BRUSHES_OT_import_from_folders(bpy.types.Operator):
         brush = bpy.data.brushes.new(name=self._unique_brush_name(name), mode=mode)
         brush.texture = texture
         brush.strength = strength
+        if hasattr(brush, 'use_fake_user'):
+            brush.use_fake_user = True
+        brush.asset_mark()
         if stroke and hasattr(brush, 'stroke_method'):
             brush.stroke_method = stroke
         if brush.texture_slot:
