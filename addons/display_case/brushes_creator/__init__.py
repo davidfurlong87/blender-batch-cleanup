@@ -9,6 +9,96 @@ ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'bmp', 'tiff', 'tga', 'webp', 'hdr'}
 # Ordered list of stroke methods cycled by the hotkey operator.
 STROKE_METHOD_CYCLE = ('SPACE', 'DOTS', 'DRAG_DOT', 'AIRBRUSH', 'ANCHORED', 'LINE', 'CURVE')
 
+_CATS_HEADER = (
+    "# This is an Asset Catalog Definition file for Blender.\n"
+    "#\n"
+    "# Empty lines and lines starting with `#` will be ignored.\n"
+    '# The remaining lines are of the format "UUID:catalog/path/for/assets:simple catalog name"\n'
+    "\n"
+    "VERSION 1\n"
+    "\n"
+)
+
+# Sentinel identifiers used in EnumProperty values.
+_CURRENT_FILE = "__current_file__"
+_NEW_CATALOG  = "__new__"
+
+# Module-level caches — Blender requires enum item lists to stay alive in
+# memory between draws, otherwise it can crash or show garbage strings.
+_library_enum_cache: list = []
+_catalog_enum_cache: list = []
+
+
+def _read_catalog_file(cats_file: str) -> dict:
+    """Parse a blender_assets.cats.txt and return {catalog_path: uuid}."""
+    catalog_map: dict[str, str] = {}
+    if not os.path.exists(cats_file):
+        return catalog_map
+    with open(cats_file, 'r', encoding='utf-8') as fh:
+        for raw in fh:
+            line = raw.rstrip('\n')
+            if line.startswith('#') or not line.strip() or line.startswith('VERSION'):
+                continue
+            parts = line.split(':', 2)
+            if len(parts) == 3:
+                cat_uuid, cat_path, _ = parts
+                catalog_map[cat_path] = cat_uuid
+    return catalog_map
+
+
+def _ensure_catalog_in_file(catalog_path: str, cats_file: str) -> str:
+    """Ensure *catalog_path* (and all its ancestors) exist in *cats_file*.
+    Creates the file with a standard header if it does not exist yet.
+    Returns the UUID of the leaf catalog."""
+    catalog_map = _read_catalog_file(cats_file)
+
+    segments = catalog_path.split('/')
+    new_entries: list[str] = []
+    for depth in range(1, len(segments) + 1):
+        ancestor = '/'.join(segments[:depth])
+        if ancestor not in catalog_map:
+            new_uuid = str(_uuid_mod.uuid4())
+            catalog_map[ancestor] = new_uuid
+            new_entries.append(f"{new_uuid}:{ancestor}:{segments[depth - 1]}")
+
+    if new_entries:
+        if not os.path.exists(cats_file):
+            with open(cats_file, 'w', encoding='utf-8') as fh:
+                fh.write(_CATS_HEADER)
+        with open(cats_file, 'a', encoding='utf-8') as fh:
+            fh.write('\n'.join(new_entries) + '\n')
+
+    return catalog_map[catalog_path]
+
+
+def _library_enum_items(self, context):
+    global _library_enum_cache
+    items = [(_CURRENT_FILE, "Current File",
+              "Keep assets in the currently open .blend file (no library required)")]
+    try:
+        for lib in context.preferences.filepaths.asset_libraries:
+            abs_path = os.path.abspath(bpy.path.abspath(lib.path))
+            items.append((abs_path, lib.name, abs_path))
+    except Exception as e:
+        print(f"[brushes_creator] Could not read asset library list: {e}")
+    _library_enum_cache = items
+    return _library_enum_cache
+
+
+def _catalog_enum_items(self, context):
+    global _catalog_enum_cache
+    items = [(_NEW_CATALOG, "+ New Catalog…",
+              "Type a new catalog path in the field below")]
+    lib_path = self.selected_library
+    if lib_path and lib_path != _CURRENT_FILE:
+        cats_file = os.path.join(lib_path, "blender_assets.cats.txt")
+        catalog_map = _read_catalog_file(cats_file)
+        for cat_path in sorted(catalog_map.keys()):
+            items.append((catalog_map[cat_path], cat_path, cat_path))
+    _catalog_enum_cache = items
+    return _catalog_enum_cache
+
+
 # ==========================================================
 # Properties
 # ==========================================================
@@ -74,12 +164,21 @@ class BrushCreatorProperties(bpy.types.PropertyGroup):
         default=True,
     ) # type: ignore
 
-    catalog_path: StringProperty(
+    selected_library: EnumProperty(
+        name="Library",
+        description="Asset library to add the brushes to",
+        items=_library_enum_items,
+    )  # type: ignore
+
+    selected_catalog: EnumProperty(
         name="Catalog",
-        description=(
-            "Asset catalog path to assign brushes to (e.g. 'Brushes' or 'Brushes/Sculpt'). "
-            "The .blend file must be saved for this to take effect"
-        ),
+        description="Catalog within the selected library",
+        items=_catalog_enum_items,
+    )  # type: ignore
+
+    new_catalog_path: StringProperty(
+        name="New Catalog Path",
+        description="Path for the new catalog (e.g. 'Brushes' or 'Brushes/Sculpt')",
         default="Brushes",
     )  # type: ignore
 
@@ -88,97 +187,6 @@ class BrushCreatorProperties(bpy.types.PropertyGroup):
     texture_calculate_alpha: BoolProperty(default=True) # type: ignore
     texture_fake_user: BoolProperty(default=True) # type: ignore
     texture_interpolation: BoolProperty(default=True) # type: ignore
-
-
-# ==========================================================
-# Catalog helpers
-# ==========================================================
-
-_CATS_HEADER = (
-    "# This is an Asset Catalog Definition file for Blender.\n"
-    "#\n"
-    "# Empty lines and lines starting with `#` will be ignored.\n"
-    '# The remaining lines are of the format "UUID:catalog/path/for/assets:simple catalog name"\n'
-    "\n"
-    "VERSION 1\n"
-    "\n"
-)
-
-
-def _find_cats_file(blend_filepath: str) -> str:
-    """Return the path to the correct blender_assets.cats.txt for this blend file.
-
-    Strategy:
-    1. Check every asset library registered in Blender preferences.  If the
-       blend file lives inside one of those libraries, use that library root's
-       catalog file — this is exactly the file Blender reads for the library.
-    2. If the blend file is not inside any registered library, fall back to
-       creating a catalog file next to the blend file itself.
-    """
-    abs_blend = os.path.abspath(blend_filepath)
-    blend_dir = os.path.dirname(abs_blend)
-
-    try:
-        for lib in bpy.context.preferences.filepaths.asset_libraries:
-            lib_root = os.path.abspath(bpy.path.abspath(lib.path))
-            # Normalise separators before comparison
-            if abs_blend.startswith(lib_root + os.sep):
-                return os.path.join(lib_root, "blender_assets.cats.txt")
-    except Exception as e:
-        print(f"[brushes_creator] Could not read asset library preferences: {e}")
-
-    # Blend file is not inside any registered library — write next to it
-    return os.path.join(blend_dir, "blender_assets.cats.txt")
-
-
-def _get_or_create_catalog(catalog_path: str) -> str | None:
-    """Ensure *catalog_path* (e.g. 'Brushes/Sculpt') exists in the
-    nearest blender_assets.cats.txt found by walking up from the blend file.
-    Returns the UUID string for the leaf catalog, or None when the
-    .blend file has not been saved yet."""
-    blend_filepath = bpy.data.filepath
-    if not blend_filepath:
-        return None
-
-    cats_file = _find_cats_file(blend_filepath)
-
-    # Parse existing file --------------------------------------------------
-    catalog_map: dict[str, str] = {}   # path -> uuid
-    existing_lines: list[str] = []
-
-    if os.path.exists(cats_file):
-        with open(cats_file, 'r', encoding='utf-8') as fh:
-            for raw in fh:
-                line = raw.rstrip('\n')
-                # Skip header / comment / version lines
-                if line.startswith('#') or not line.strip() or line.startswith('VERSION'):
-                    existing_lines.append(line)
-                    continue
-                parts = line.split(':', 2)
-                if len(parts) == 3:
-                    cat_uuid, cat_path, _ = parts
-                    catalog_map[cat_path] = cat_uuid
-                    existing_lines.append(line)
-
-    # Build ancestor chain (create "Brushes" before "Brushes/Sculpt") ------
-    segments = catalog_path.split('/')
-    new_entries: list[str] = []
-    for depth in range(1, len(segments) + 1):
-        ancestor = '/'.join(segments[:depth])
-        if ancestor not in catalog_map:
-            new_uuid = str(_uuid_mod.uuid4())
-            catalog_map[ancestor] = new_uuid
-            new_entries.append(f"{new_uuid}:{ancestor}:{segments[depth - 1]}")
-
-    if new_entries:
-        if not os.path.exists(cats_file):
-            with open(cats_file, 'w', encoding='utf-8') as fh:
-                fh.write(_CATS_HEADER)
-            existing_lines = [line.rstrip('\n') for line in _CATS_HEADER.splitlines()]
-        with open(cats_file, 'a', encoding='utf-8') as fh:
-            fh.write('\n'.join(new_entries) + '\n')
-
-    return catalog_map.get(catalog_path)
 
 
 # ==========================================================
@@ -210,17 +218,35 @@ class BRUSHES_OT_import_from_folders(bpy.types.Operator):
             self.report({'WARNING'}, "No supported images found in the images folder")
             return {'CANCELLED'}
 
-        # Resolve (or create) the asset catalog before the import loop
-        catalog_path = props.catalog_path.strip()
+        # Resolve the catalog UUID before the import loop --------------------
         catalog_id = None
-        if catalog_path:
-            catalog_id = _get_or_create_catalog(catalog_path)
-            if catalog_id is None:
-                self.report({'WARNING'},
-                    "Brushes created without a catalog — save the .blend file first, then re-import")
+        lib_path   = props.selected_library
+        sel_cat    = props.selected_catalog
+
+        if sel_cat and sel_cat != _NEW_CATALOG:
+            # Existing catalog — the enum identifier IS the UUID
+            catalog_id = sel_cat
+
+        elif sel_cat == _NEW_CATALOG:
+            new_path = props.new_catalog_path.strip()
+            if not new_path:
+                self.report({'ERROR'}, "Enter a catalog path or select an existing catalog")
+                return {'CANCELLED'}
+
+            if lib_path == _CURRENT_FILE:
+                if not bpy.data.filepath:
+                    self.report({'WARNING'},
+                        "Save the .blend file first to assign a catalog to Current File assets")
+                else:
+                    cats_file  = os.path.join(os.path.dirname(bpy.data.filepath),
+                                              "blender_assets.cats.txt")
+                    catalog_id = _ensure_catalog_in_file(new_path, cats_file)
             else:
-                cats_file = _find_cats_file(bpy.data.filepath)
-                print(f"[brushes_creator] Catalog '{catalog_path}' ({catalog_id}) written to: {cats_file}")
+                cats_file  = os.path.join(lib_path, "blender_assets.cats.txt")
+                catalog_id = _ensure_catalog_in_file(new_path, cats_file)
+
+            if catalog_id:
+                print(f"[brushes_creator] Created catalog '{new_path}' ({catalog_id}) in {cats_file}")
 
         created = sum(
             1 for f in files
@@ -372,9 +398,12 @@ def draw_panel(layout, context):
 
     box = layout.box()
     box.label(text="Asset Catalog", icon='ASSET_MANAGER')
-    box.prop(props, "catalog_path", text="Path")
-    if not bpy.data.filepath:
-        box.label(text="Save the .blend file to enable catalog assignment", icon='ERROR')
+    box.prop(props, "selected_library", text="Library")
+    box.prop(props, "selected_catalog", text="Catalog")
+    if props.selected_catalog == _NEW_CATALOG:
+        box.prop(props, "new_catalog_path", text="Path")
+        if props.selected_library == _CURRENT_FILE and not bpy.data.filepath:
+            box.label(text="Save the .blend file first", icon='ERROR')
 
     layout.operator("brushes.import_from_folders", icon='BRUSHES_ALL')
 
