@@ -8,17 +8,6 @@ import os
 import bpy
 import math
 
-# bl_info = {
-#     "name": "Sculpting Brush Texture Editor",
-#     "author": "Robin Hohnsbeen",
-#     "description": "Create vector displacement and height map brushes easily in one click in a dedicated workspace and scene.",
-#     "blender": (3, 5, 0),
-#     "version": (1, 1, 9),
-#     "location": "Sculpt Mode: View3D > Sidebar > Tool Tab",
-#     "warning": "",
-#     "category": "Sculpting"
-# }
-
 SetupBlendFile = "BrushEditorSetup.blend"
 CompositingBlendFile = (
     "BrushEditor_5_0_CompositingNodes.blend"  # Used in Blender 5.0 and up
