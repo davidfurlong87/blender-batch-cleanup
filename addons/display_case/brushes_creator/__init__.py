@@ -199,6 +199,13 @@ class BRUSHES_OT_import_from_folders(bpy.types.Operator):
     bl_description = "Create brushes from all images in the selected textures folder"
     bl_options = {'REGISTER', 'UNDO'}
 
+    skip_preview: BoolProperty(  # type: ignore
+        name="Skip Preview",
+        default=False,
+        options={'HIDDEN'},
+        description="Do not generate or assign thumbnails during import",
+    )
+
     def execute(self, context):
         props = context.scene.brush_creator_props
 
@@ -318,7 +325,8 @@ class BRUSHES_OT_import_from_folders(bpy.types.Operator):
             brush.texture_slot.map_mode = map_mode
         if mode == 'SCULPT' and hasattr(brush, 'use_frontface'):
             brush.use_frontface = front_faces_only
-        self._apply_preview(brush, thumb_path)
+        if not self.skip_preview:
+            self._apply_preview(brush, thumb_path)
         return brush
 
     def _create_brush_from_file(self, filepath, thumb_dir, props, catalog_id=None):
@@ -406,10 +414,14 @@ def draw_panel(layout, context):
             box.label(text="Save the .blend file first", icon='ERROR')
 
     layout.operator("brushes.import_from_folders", icon='BRUSHES_ALL')
+    layout.operator("brushes.import_no_preview", icon='BRUSHES_ALL')
+
+    layout.separator()
 
     row = layout.row(align=True)
     row.operator("brushes.scan_missing_previews", icon='VIEWZOOM')
     row.operator("brushes.generate_missing_previews", icon='IMAGE_DATA')
+    layout.operator("brushes.generate_previews_render", icon='RENDER_STILL')
 
 
 # ==========================================================
@@ -523,6 +535,118 @@ class BRUSHES_OT_generate_missing_previews(bpy.types.Operator):
             for area in window.screen.areas:
                 area.tag_redraw()
 
+        return {'FINISHED'}
+
+
+# ==========================================================
+# New render-pipeline operators (piecemeal migration)
+# ==========================================================
+
+class BRUSHES_OT_import_no_preview(bpy.types.Operator):
+    bl_idname = "brushes.import_no_preview"
+    bl_label = "Import Brushes (No Preview)"
+    bl_description = (
+        "Import brushes from the selected folder without generating any preview. "
+        "Use 'Generate Previews (Render)' afterwards to create rendered thumbnails"
+    )
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        return bpy.ops.brushes.import_from_folders('EXEC_DEFAULT', skip_preview=True)
+
+
+class BRUSHES_OT_generate_previews_render(bpy.types.Operator):
+    bl_idname = "brushes.generate_previews_render"
+    bl_label = "Generate Previews (Render)"
+    bl_description = (
+        "Generate rendered asset previews for all asset brushes missing a thumbnail. "
+        "Requires BrushEditorSetup.blend in the addon folder. Press ESC to cancel"
+    )
+    bl_options = {'REGISTER'}
+
+    _targets: list = []
+    _index:   int  = 0
+    _timer         = None
+    _ok:    int    = 0
+    _fail:  int    = 0
+
+    def invoke(self, context, event):
+        from . import preview_renderer
+
+        if not preview_renderer.is_available():
+            self.report(
+                {'ERROR'},
+                "Blend files not found — place BrushEditorSetup.blend and "
+                "BrushEditor_5_0_CompositingNodes.blend in the addon folder"
+            )
+            return {'CANCELLED'}
+
+        self._targets = [
+            b for b in bpy.data.brushes
+            if b.asset_data is not None and not _has_preview(b)
+        ]
+
+        if not self._targets:
+            self.report({'INFO'}, "No asset brushes are missing previews")
+            return {'FINISHED'}
+
+        self._index = 0
+        self._ok    = 0
+        self._fail  = 0
+
+        self._timer = context.window_manager.event_timer_add(0.05, window=context.window)
+        context.window_manager.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
+
+    def modal(self, context, event):
+        if event.type == 'ESC':
+            return self._finish(context, cancelled=True)
+
+        if event.type != 'TIMER':
+            return {'PASS_THROUGH'}
+
+        if self._index >= len(self._targets):
+            return self._finish(context)
+
+        from . import preview_renderer
+        brush = self._targets[self._index]
+        props = context.scene.brush_creator_props
+
+        if preview_renderer.generate_preview(
+            brush,
+            preview_type=getattr(props, 'render_preview_type', 'Sphere'),
+            displacement_multiplier=getattr(props, 'render_displacement_multiplier', 1.0),
+        ):
+            self._ok += 1
+        else:
+            self._fail += 1
+
+        self._index += 1
+        context.area.header_text_set(
+            f"Generating previews: {self._index}/{len(self._targets)}  "
+            f"(ESC to cancel)"
+        )
+        return {'RUNNING_MODAL'}
+
+    def _finish(self, context, cancelled=False):
+        context.window_manager.event_timer_remove(self._timer)
+        context.area.header_text_set(None)
+
+        for window in context.window_manager.windows:
+            for area in window.screen.areas:
+                area.tag_redraw()
+
+        if cancelled:
+            self.report({'WARNING'},
+                        f"Cancelled — generated {self._ok} preview(s) before stopping")
+            return {'CANCELLED'}
+
+        msg = f"Generated {self._ok}/{len(self._targets)} preview(s)"
+        if self._fail:
+            msg += f" — {self._fail} failed (see console)"
+            self.report({'WARNING'}, msg)
+        else:
+            self.report({'INFO'}, msg)
         return {'FINISHED'}
 
 
@@ -658,6 +782,8 @@ classes = (
     BRUSHES_OT_import_from_folders,
     BRUSHES_OT_scan_missing_previews,
     BRUSHES_OT_generate_missing_previews,
+    BRUSHES_OT_import_no_preview,
+    BRUSHES_OT_generate_previews_render,
     BRUSH_OT_set_stroke_method,
     BRUSH_OT_cycle_stroke_method,
     BRUSH_MT_stroke_method_pie,

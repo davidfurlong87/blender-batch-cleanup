@@ -62,31 +62,63 @@ for those cases.
 
 ---
 
+## Migration strategy
+
+Old and new functionality run side-by-side until the render pipeline is fully validated.
+`alt.py` is kept as a read-only reference. New code lives in `preview_renderer.py`.
+
+### Panel layout (current state)
+
+```
+[ Import Brushes From Folders ]       ← existing, generates previews via lib_id_load_custom_preview
+[ Import Brushes (No Preview)  ]      ← new stub, skips all preview logic
+
+[ Scan Missing Previews ] [ Generate Missing Previews ]   ← existing fallback pipeline
+[ Generate Previews (Render) ]        ← new stub, will call preview_renderer.generate_preview()
+```
+
+---
+
 ## TODO
 
 ### Blockers
-- [ ] Obtain `BrushEditorSetup.blend` from the other developer and add to addon directory
-- [ ] Obtain `BrushEditor_5_0_CompositingNodes.blend` and add to addon directory
+- [ ] Obtain `BrushEditorSetup.blend` from the other developer and place in
+      `addons/display_case/brushes_creator/`
+- [ ] Obtain `BrushEditor_5_0_CompositingNodes.blend` and place in the same folder
 
-### Integration
-- [ ] Move `OpenEditorSceneAndWorkspace` and `ReturnToNormalWorkspaceAndScene` to shared
-      scope so both `alt.py` and `__init__.py` can call them
-- [ ] Replace the body of `_generate_preview_for_brush` with a call to
-      `render_preview_image`, wrapped in the open/close scene helpers
-- [ ] Convert `BRUSHES_OT_generate_missing_previews` from a plain operator to a modal
-      operator, using `RerenderPreviewImages` as the reference implementation
-- [ ] Keep `lib_id_generate_preview` as a fallback for brushes with no texture image
+### Phase 1 — preview_renderer.py internals (unblock once blend files arrive)
+- [ ] Implement `_ensure_editor_scene()`: append `BrushEditScene` from the setup
+      blend without switching the active window scene
+- [ ] Implement `_get_compositing_node_group()`: append the Blender 5 node groups
+      and rewire the Render Layers node to the editor scene
+- [ ] Implement `_set_render_visibility()`: use `hide_render` only (not `hide_set`)
+      so the user's viewport is unaffected
+- [ ] Implement `generate_preview()`: wire up all the above, call
+      `bpy.ops.render.render(write_still=True, scene=_EDITOR_SCENE_NAME)`, then
+      call `lib_id_load_custom_preview` with the rendered PNG
+- [ ] Expose `preview_type` (Flat / Tilted / Sphere) as a property in
+      `BrushCreatorProperties` and pass it through to `generate_preview()`
+- [ ] Expose displacement multiplier (VDM vs heightmap) in the panel
+
+### Phase 2 — wire new operators to preview_renderer
+- [ ] Implement `BRUSHES_OT_import_no_preview`: reuse the existing import loop
+      from `BRUSHES_OT_import_from_folders` but skip `_apply_preview` entirely
+- [ ] Implement `BRUSHES_OT_generate_previews_render` as a **modal operator**:
+      one brush per event tick, ESC to cancel, matching `RerenderPreviewImages`
+      in `alt.py` as the reference; show `{n}/{total}` progress in the header
+- [ ] Add a cancel path (ESC) and `ReturnToNormalWorkspaceAndScene` equivalent
+      to clean up the editor scene reference on cancel
+
+### Phase 3 — validation and migration
+- [ ] Confirm rendered previews display correctly in the Asset Browser on
+      Blender 4.x and 5.x
+- [ ] Once render pipeline is confirmed, wire the existing
+      `Import Brushes From Folders` button to use `generate_preview()` as its
+      primary path, falling back to `lib_id_load_custom_preview` / texture copy
+- [ ] Remove `_generate_preview_for_brush` texture-pixel fallback once no
+      longer needed
+- [ ] Decide final fate of `alt.py` (keep as reference or remove)
 
 ### Quality / UX
-- [ ] Expose preview type (Flat / Tilted / Sphere) as a user-facing property in the
-      batch import panel, mirroring the setting in alt.py's `BrushImportSettings`
-- [ ] Expose displacement multiplier per brush type (VDM vs heightmap) in the panel
-- [ ] Show per-brush progress feedback during modal generation (e.g. `{n}/{total}` in
-      the header or status bar)
-- [ ] Add a cancel path (ESC) to the modal generate operator, matching alt.py's pattern
-
-### Cleanup
-- [ ] Decide whether `alt.py` remains a standalone file or is fully merged into
-      `__init__.py` once the blend files are available
-- [ ] Remove the now-redundant texture pixel fallback in `_generate_preview_for_brush`
-      once the render pipeline is confirmed working
+- [ ] Show a panel warning when blend files are missing, explaining what to add
+      and where (drives `BRUSHES_OT_generate_previews_render` error state)
