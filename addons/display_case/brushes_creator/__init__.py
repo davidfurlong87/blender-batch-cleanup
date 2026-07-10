@@ -201,6 +201,24 @@ class BrushCreatorProperties(bpy.types.PropertyGroup):
         soft_max=5.0,
     )  # type: ignore
 
+    # Batch rename
+    rename_find: StringProperty(
+        name="Find",
+        description="Text to find in image filename stems",
+    )  # type: ignore
+    rename_replace: StringProperty(
+        name="Replace",
+        description="Replacement text (leave blank to delete the found text)",
+    )  # type: ignore
+    rename_prefix: StringProperty(
+        name="Prefix",
+        description="Text to prepend to every filename stem",
+    )  # type: ignore
+    rename_suffix: StringProperty(
+        name="Suffix",
+        description="Text to append to every filename stem (before the extension)",
+    )  # type: ignore
+
     # Internal texture settings (not exposed in panel)
     img_use_existing: BoolProperty(default=True) # type: ignore
     texture_calculate_alpha: BoolProperty(default=True) # type: ignore
@@ -310,22 +328,36 @@ class BRUSHES_OT_import_from_folders(bpy.types.Operator):
             i += 1
 
     def _apply_preview(self, brush, thumb_path):
-        if not thumb_path or not os.path.exists(thumb_path):
+        # Primary: user-supplied thumbnail file
+        if thumb_path and os.path.exists(thumb_path):
+            try:
+                if hasattr(brush, 'use_custom_icon'):
+                    brush.use_custom_icon = True
+                    brush.icon_filepath = thumb_path
+                if brush.asset_data is not None:
+                    window = bpy.context.window_manager.windows[0]
+                    with bpy.context.temp_override(window=window, id=brush):
+                        result = bpy.ops.ed.lib_id_load_custom_preview(filepath=thumb_path)
+                    if 'FINISHED' not in result:
+                        print(f"[brushes_creator] Preview not loaded for '{brush.name}' "
+                              f"(operator returned {result})")
+            except Exception as e:
+                print(f"Preview warning for {brush.name}: {e}")
             return
-        try:
-            # Toolbar icon (3D viewport brush selector, Blender 3.x compat)
-            if hasattr(brush, 'use_custom_icon'):
-                brush.use_custom_icon = True
-                brush.icon_filepath = thumb_path
 
-            if brush.asset_data is not None:
-                window = bpy.context.window_manager.windows[0]
-                with bpy.context.temp_override(window=window, id=brush):
-                    result = bpy.ops.ed.lib_id_load_custom_preview(filepath=thumb_path)
-                if 'FINISHED' not in result:
-                    print(f"[brushes_creator] Preview not loaded for '{brush.name}' (operator returned {result})")
-        except Exception as e:
-            print(f"Preview warning for {brush.name}: {e}")
+        # Fallback: render-based preview when no thumbnail file is present
+        from . import preview_renderer
+        if preview_renderer.is_available():
+            try:
+                props = bpy.context.scene.brush_creator_props
+                preview_renderer.generate_preview(
+                    brush,
+                    preview_type=props.render_preview_type,
+                    displacement_multiplier=props.render_displacement_multiplier,
+                )
+            except Exception as e:
+                print(f"[brushes_creator] Render preview fallback failed for "
+                      f"'{brush.name}': {e}")
 
     def _new_brush(self, name, mode, texture, strength, stroke, thumb_path,
                    map_mode='RANDOM', front_faces_only=False, catalog_id=None):
@@ -422,6 +454,23 @@ def draw_panel(layout, context):
         row = box.row()
         row.prop(props, "name_pre")
         row.prop(props, "name_post")
+
+    # --- Batch rename ---
+    box = layout.box()
+    box.label(text="Batch Rename Images", icon='FILE_TEXT')
+    tex_dir = bpy.path.abspath(props.textures_dir) if props.textures_dir else None
+    if tex_dir and os.path.isdir(tex_dir):
+        col = box.column(align=True)
+        col.prop(props, "rename_find",    text="Find")
+        col.prop(props, "rename_replace", text="Replace")
+        col.separator()
+        col.prop(props, "rename_prefix",  text="Prefix")
+        col.prop(props, "rename_suffix",  text="Suffix")
+        row = box.row(align=True)
+        row.operator("brushes.preview_rename_images", icon='VIEWZOOM')
+        row.operator("brushes.apply_rename_images",   icon='FILE_REFRESH')
+    else:
+        box.label(text="Set a valid Images folder above first", icon='INFO')
 
     box = layout.box()
     box.label(text="Asset Catalog", icon='ASSET_MANAGER')
@@ -600,6 +649,7 @@ class BRUSHES_OT_clear_previews(bpy.types.Operator):
             preview = brush.preview
             if preview is None:
                 continue
+            # TODO: check if the below is actually clearing the preview, or just setting the size to 0
             preview.image_size = [0, 0]
             cleared += 1
 
@@ -608,6 +658,114 @@ class BRUSHES_OT_clear_previews(bpy.types.Operator):
                 area.tag_redraw()
 
         self.report({'INFO'}, f"Cleared previews from {cleared} brush(es)")
+        return {'FINISHED'}
+
+
+# ==========================================================
+# Batch rename helpers + operators
+# ==========================================================
+
+def _compute_renames(tex_dir, find, replace, prefix, suffix):
+    """Return a list of (old_path, new_path) for files whose name would change.
+
+    Operations are applied in order: find/replace → prefix → suffix.
+    Pairs where old == new are excluded.
+    """
+    results = []
+    for filename in sorted(os.listdir(tex_dir)):
+        stem, ext = os.path.splitext(filename)
+        if ext.lower().lstrip('.') not in ALLOWED_EXTENSIONS:
+            continue
+        new_stem = stem.replace(find, replace) if find else stem
+        new_stem = prefix + new_stem + suffix
+        if new_stem == stem:
+            continue
+        results.append((
+            os.path.join(tex_dir, filename),
+            os.path.join(tex_dir, new_stem + ext),
+        ))
+    return results
+
+
+class BRUSHES_OT_preview_rename_images(bpy.types.Operator):
+    bl_idname = "brushes.preview_rename_images"
+    bl_label = "Preview Renames"
+    bl_description = "Print the proposed filename changes to the console without renaming anything"
+    bl_options = {'REGISTER'}
+
+    def execute(self, context):
+        props = context.scene.brush_creator_props
+        tex_dir = bpy.path.abspath(props.textures_dir) if props.textures_dir else None
+
+        if not tex_dir or not os.path.isdir(tex_dir):
+            self.report({'ERROR'}, "Images folder is invalid or not set")
+            return {'CANCELLED'}
+
+        renames = _compute_renames(
+            tex_dir,
+            props.rename_find,
+            props.rename_replace,
+            props.rename_prefix,
+            props.rename_suffix,
+        )
+
+        if not renames:
+            self.report({'INFO'}, "No files would be renamed with these settings")
+            return {'FINISHED'}
+
+        print(f"[brushes_creator] Rename preview — {len(renames)} file(s) would change:")
+        for old, new in renames:
+            print(f"  {os.path.basename(old)}  →  {os.path.basename(new)}")
+
+        self.report({'INFO'}, f"{len(renames)} file(s) would be renamed — see console for details")
+        return {'FINISHED'}
+
+
+class BRUSHES_OT_apply_rename_images(bpy.types.Operator):
+    bl_idname = "brushes.apply_rename_images"
+    bl_label = "Rename Images"
+    bl_description = "Rename image files in the Images folder according to the settings above"
+    bl_options = {'REGISTER'}
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_confirm(self, event)
+
+    def execute(self, context):
+        props = context.scene.brush_creator_props
+        tex_dir = bpy.path.abspath(props.textures_dir) if props.textures_dir else None
+
+        if not tex_dir or not os.path.isdir(tex_dir):
+            self.report({'ERROR'}, "Images folder is invalid or not set")
+            return {'CANCELLED'}
+
+        renames = _compute_renames(
+            tex_dir,
+            props.rename_find,
+            props.rename_replace,
+            props.rename_prefix,
+            props.rename_suffix,
+        )
+
+        if not renames:
+            self.report({'INFO'}, "No files matched — nothing renamed")
+            return {'FINISHED'}
+
+        ok = 0
+        skipped = 0
+        for old_path, new_path in renames:
+            if os.path.exists(new_path):
+                print(f"[brushes_creator] Skipped (target exists): {os.path.basename(new_path)}")
+                skipped += 1
+                continue
+            os.rename(old_path, new_path)
+            ok += 1
+
+        msg = f"Renamed {ok} file(s)"
+        if skipped:
+            msg += f", skipped {skipped} (target name already exists — see console)"
+            self.report({'WARNING'}, msg)
+        else:
+            self.report({'INFO'}, msg)
         return {'FINISHED'}
 
 
@@ -856,6 +1014,8 @@ classes = (
     BRUSHES_OT_scan_missing_previews,
     BRUSHES_OT_generate_missing_previews,
     BRUSHES_OT_clear_previews,
+    BRUSHES_OT_preview_rename_images,
+    BRUSHES_OT_apply_rename_images,
     BRUSHES_OT_import_no_preview,
     BRUSHES_OT_generate_previews_render,
     BRUSH_OT_set_stroke_method,

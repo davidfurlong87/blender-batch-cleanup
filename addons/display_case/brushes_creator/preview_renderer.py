@@ -179,12 +179,12 @@ def _configure_scene_for_render(scene: bpy.types.Scene,
                                 preview_type: str) -> None:
     """Set render engine, resolution, compositing, and collection visibility."""
 
-    scene.render.engine = "BLENDER_WORKBENCH"
+    scene.render.engine = "CYCLES"
     scene.display.shading.color_type = "VERTEX"
     scene.display_settings.display_device = "sRGB"
     scene.view_settings.view_transform = "Standard"
-    scene.render.resolution_x = 256
-    scene.render.resolution_y = 256
+    scene.render.resolution_x = 512
+    scene.render.resolution_y = 512
     scene.render.resolution_percentage = 100
     scene.render.image_settings.file_format = "PNG"
     scene.render.image_settings.color_depth = "8"
