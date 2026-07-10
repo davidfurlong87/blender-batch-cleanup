@@ -4,7 +4,7 @@ import pathlib
 import os
 import uuid as _uuid_mod
 
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'bmp', 'tiff', 'tga', 'webp', 'hdr', 'tif'}
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'bmp', 'tiff', 'tga', 'webp', 'hdr', 'tif', 'psd'}
 
 # Ordered list of stroke methods cycled by the hotkey operator.
 STROKE_METHOD_CYCLE = ('SPACE', 'DOTS', 'DRAG_DOT', 'AIRBRUSH', 'ANCHORED', 'LINE', 'CURVE')
@@ -417,10 +417,8 @@ def draw_panel(layout, context):
 # ==========================================================
 
 def _has_preview(brush) -> bool:
-    """Return True if the brush asset already has a non-empty preview."""
-    if brush.asset_data is None:
-        return False
-    preview = brush.asset_data.preview
+    """Return True if the brush already has a non-empty preview image."""
+    preview = brush.preview
     if preview is None:
         return False
     w, h = preview.image_size
@@ -450,7 +448,7 @@ def _generate_preview_for_brush(brush) -> bool:
                 img.pixels  # force load
             w, h = img.size
             if w > 0 and h > 0:
-                preview = brush.asset_data.preview
+                preview = brush.preview_ensure()
                 preview.image_size = [w, h]
                 preview.image_pixels_float[:] = img.pixels[:]
                 if _has_preview(brush):
