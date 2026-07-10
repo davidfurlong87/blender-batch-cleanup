@@ -4,7 +4,7 @@ import pathlib
 import os
 import uuid as _uuid_mod
 
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'bmp', 'tiff', 'tga', 'webp', 'hdr'}
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'bmp', 'tiff', 'tga', 'webp', 'hdr', 'tif'}
 
 # Ordered list of stroke methods cycled by the hotkey operator.
 STROKE_METHOD_CYCLE = ('SPACE', 'DOTS', 'DRAG_DOT', 'AIRBRUSH', 'ANCHORED', 'LINE', 'CURVE')
