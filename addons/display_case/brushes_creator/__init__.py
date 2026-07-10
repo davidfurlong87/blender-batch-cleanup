@@ -182,6 +182,25 @@ class BrushCreatorProperties(bpy.types.PropertyGroup):
         default="Brushes",
     )  # type: ignore
 
+    render_preview_type: EnumProperty(
+        name="Preview Shape",
+        description="Mesh shape used when rendering the brush preview",
+        items=[
+            ('Sphere', "Sphere", "Render preview on a sphere"),
+            ('Tilted', "Tilted", "Render preview on a tilted plane"),
+            ('Flat',   "Flat",   "Render preview on a flat plane"),
+        ],
+        default='Sphere',
+    )  # type: ignore
+
+    render_displacement_multiplier: FloatProperty(
+        name="Displacement",
+        description="Scales the brush displacement strength used in the preview render",
+        default=1.0,
+        min=0.0,
+        soft_max=5.0,
+    )  # type: ignore
+
     # Internal texture settings (not exposed in panel)
     img_use_existing: BoolProperty(default=True) # type: ignore
     texture_calculate_alpha: BoolProperty(default=True) # type: ignore
@@ -418,10 +437,29 @@ def draw_panel(layout, context):
 
     layout.separator()
 
-    row = layout.row(align=True)
+    # --- Preview tools ---
+    box = layout.box()
+    box.label(text="Preview Tools", icon='RENDER_STILL')
+
+    from . import preview_renderer as _pr
+    if _pr.is_available():
+        row = box.row(align=True)
+        row.prop(props, "render_preview_type", expand=True)
+        box.prop(props, "render_displacement_multiplier")
+        box.operator("brushes.generate_previews_render", icon='RENDER_STILL')
+    else:
+        col = box.column(align=True)
+        col.label(text="Blend files not found:", icon='ERROR')
+        col.label(text="  BrushEditorSetup.blend")
+        col.label(text="  BrushEditor_5_0_CompositingNodes.blend")
+        col.label(text="Place both in the brushes_creator folder.")
+        col.enabled = False
+
+    box.separator()
+    row = box.row(align=True)
     row.operator("brushes.scan_missing_previews", icon='VIEWZOOM')
     row.operator("brushes.generate_missing_previews", icon='IMAGE_DATA')
-    layout.operator("brushes.generate_previews_render", icon='RENDER_STILL')
+    box.operator("brushes.clear_previews", icon='TRASH')
 
 
 # ==========================================================
@@ -535,6 +573,41 @@ class BRUSHES_OT_generate_missing_previews(bpy.types.Operator):
             for area in window.screen.areas:
                 area.tag_redraw()
 
+        return {'FINISHED'}
+
+
+# ==========================================================
+# Clear previews operator
+# ==========================================================
+
+class BRUSHES_OT_clear_previews(bpy.types.Operator):
+    bl_idname = "brushes.clear_previews"
+    bl_label = "Clear All Previews"
+    bl_description = (
+        "Remove the preview image from every asset brush in this file. "
+        "Useful for experimenting with different preview styles"
+    )
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_confirm(self, event)
+
+    def execute(self, context):
+        cleared = 0
+        for brush in bpy.data.brushes:
+            if brush.asset_data is None:
+                continue
+            preview = brush.preview
+            if preview is None:
+                continue
+            preview.image_size = [0, 0]
+            cleared += 1
+
+        for window in context.window_manager.windows:
+            for area in window.screen.areas:
+                area.tag_redraw()
+
+        self.report({'INFO'}, f"Cleared previews from {cleared} brush(es)")
         return {'FINISHED'}
 
 
@@ -782,6 +855,7 @@ classes = (
     BRUSHES_OT_import_from_folders,
     BRUSHES_OT_scan_missing_previews,
     BRUSHES_OT_generate_missing_previews,
+    BRUSHES_OT_clear_previews,
     BRUSHES_OT_import_no_preview,
     BRUSHES_OT_generate_previews_render,
     BRUSH_OT_set_stroke_method,
