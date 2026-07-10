@@ -407,6 +407,126 @@ def draw_panel(layout, context):
 
     layout.operator("brushes.import_from_folders", icon='BRUSHES_ALL')
 
+    row = layout.row(align=True)
+    row.operator("brushes.scan_missing_previews", icon='VIEWZOOM')
+    row.operator("brushes.generate_missing_previews", icon='IMAGE_DATA')
+
+
+# ==========================================================
+# Preview helpers
+# ==========================================================
+
+def _has_preview(brush) -> bool:
+    """Return True if the brush asset already has a non-empty preview."""
+    if brush.asset_data is None:
+        return False
+    preview = brush.asset_data.preview
+    if preview is None:
+        return False
+    w, h = preview.image_size
+    return w > 0 and h > 0
+
+
+def _generate_preview_for_brush(brush) -> bool:
+    """Try lib_id_generate_preview first; fall back to copying the brush
+    texture's image pixels.  Returns True if a preview was produced."""
+    window = bpy.context.window_manager.windows[0]
+
+    # Primary: Blender's built-in asset preview renderer
+    try:
+        with bpy.context.temp_override(window=window, id=brush):
+            result = bpy.ops.ed.lib_id_generate_preview()
+        if result == {'FINISHED'} and _has_preview(brush):
+            return True
+    except Exception as e:
+        print(f"[brushes_creator] lib_id_generate_preview failed for '{brush.name}': {e}")
+
+    # Fallback: copy the brush's texture image pixels directly into the preview
+    try:
+        tex = brush.texture
+        if tex and tex.type == 'IMAGE' and tex.image:
+            img = tex.image
+            if not img.has_data:
+                img.pixels  # force load
+            w, h = img.size
+            if w > 0 and h > 0:
+                preview = brush.asset_data.preview
+                preview.image_size = [w, h]
+                preview.image_pixels_float[:] = img.pixels[:]
+                if _has_preview(brush):
+                    return True
+    except Exception as e:
+        print(f"[brushes_creator] texture fallback failed for '{brush.name}': {e}")
+
+    return False
+
+
+# ==========================================================
+# Scan / Generate preview operators
+# ==========================================================
+
+class BRUSHES_OT_scan_missing_previews(bpy.types.Operator):
+    bl_idname = "brushes.scan_missing_previews"
+    bl_label = "Scan Missing Previews"
+    bl_description = "List all asset brushes that have no thumbnail preview"
+    bl_options = {'REGISTER'}
+
+    def execute(self, context):
+        missing = [brush.name for brush in bpy.data.brushes
+                   if brush.asset_data is not None and not _has_preview(brush)]
+
+        if not missing:
+            self.report({'INFO'}, "All asset brushes have previews")
+            return {'FINISHED'}
+
+        print(f"[brushes_creator] ({len(missing)}) brushes missing previews :")
+        for name in missing:
+            print(f"  • {name}")
+
+        self.report({'WARNING'},
+                    f"{len(missing)} brush(es) missing previews — see console for names")
+        return {'FINISHED'}
+
+
+class BRUSHES_OT_generate_missing_previews(bpy.types.Operator):
+    bl_idname = "brushes.generate_missing_previews"
+    bl_label = "Generate Missing Previews"
+    bl_description = (
+        "Generate previews for all asset brushes that have no thumbnail. "
+        "Uses Blender's built-in preview renderer, falling back to the brush texture"
+    )
+    bl_options = {'REGISTER'}
+
+    def execute(self, context):
+        targets = [b for b in bpy.data.brushes
+                   if b.asset_data is not None and not _has_preview(b)]
+
+        if not targets:
+            self.report({'INFO'}, "No asset brushes are missing previews")
+            return {'FINISHED'}
+
+        ok = 0
+        fail = 0
+        for brush in targets:
+            if _generate_preview_for_brush(brush):
+                ok += 1
+            else:
+                fail += 1
+                print(f"[brushes_creator] Could not generate preview for '{brush.name}'")
+
+        msg = f"Generated {ok}/{len(targets)} preview(s)"
+        if fail:
+            msg += f" — {fail} failed (see console)"
+            self.report({'WARNING'}, msg)
+        else:
+            self.report({'INFO'}, msg)
+
+        for window in context.window_manager.windows:
+            for area in window.screen.areas:
+                area.tag_redraw()
+
+        return {'FINISHED'}
+
 
 # ==========================================================
 # Shared helper
@@ -538,6 +658,8 @@ def unregister_keymaps():
 classes = (
     BrushCreatorProperties,
     BRUSHES_OT_import_from_folders,
+    BRUSHES_OT_scan_missing_previews,
+    BRUSHES_OT_generate_missing_previews,
     BRUSH_OT_set_stroke_method,
     BRUSH_OT_cycle_stroke_method,
     BRUSH_MT_stroke_method_pie,
